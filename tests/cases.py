@@ -6,12 +6,18 @@ All images are synthetic (opcode sweeps and seeded random data).
 
 import os
 import random
+import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(ROOT, 'original', 'examples')
 
 M6800_CPUS = ['6800', '6801', '6301']
 M6502_CPUS = ['6502', '65C00', '65C02']
+M6805_CPUS = ['6805', '68HC05', '63L05', '6305']
+# Opcode table used by each tested CPU type
+TABLES = {'6800': 'tab_6800', '6801': 'tab_6801', '6301': 'tab_6301',
+          '6502': 'tab_6502', '65C00': 'tab_65c00', '65C02': 'tab_65c02',
+          '6805': 'tab_6805', '68HC05': 'tab_68hc05', '63L05': 'tab_63l05', '6305': 'tab_6305'}
 NUMFORMATS = 'ACDIMRS'
 
 
@@ -42,6 +48,32 @@ def sweep_sym(cpu, origin, slot=4, numformat=None):
     return ('\n'.join(lines) + '\n').encode()
 
 
+TABLE_DIR = os.path.join(ROOT, 'dasmy', 'src', 'tables')
+_ENTRY = re.compile(r'/\* ([0-9A-F]{2}) \*/ \{ ("[^"]*"|NULL), ("[^"]*"|NULL), 0x([0-9A-F]+), (\d+), ')
+
+
+def valid_opcodes(table):
+    """(opcode, length) for every valid opcode in a generated table, e.g. 'tab_6805'."""
+    for name in os.listdir(TABLE_DIR):
+        text = open(os.path.join(TABLE_DIR, name)).read()
+        start = text.find(f'const OpEntry {table}[')
+        if start >= 0:
+            body = text[start:text.index('};', start)]
+            return [(int(m[1], 16), int(m[5])) for m in _ENTRY.finditer(body) if int(m[4], 16) != 0]
+    raise KeyError(table)
+
+
+def program_image(seed, size, table):
+    """Random stream of valid instructions (random operands), so threads run far."""
+    rng = random.Random(seed)
+    ops = valid_opcodes(table)
+    data = bytearray()
+    while len(data) < size:
+        op, length = rng.choice(ops)
+        data += bytes([op] + [rng.randrange(256) for _ in range(length - 1)])
+    return bytes(data[:size])
+
+
 def random_image(seed, size):
     rng = random.Random(seed)
     return bytes(rng.randrange(256) for _ in range(size))
@@ -69,22 +101,26 @@ def family_cases(cpus, operand_sets=((0x12, 0x34), (0xC0, 0x10))):
     return out
 
 
-def vector_thread_cases(cpu, vectors, big_endian, size=0x2000, seeds=3):
+def vector_thread_cases(cpu, vectors, big_endian, size=0x2000, seeds=3, origin=None, tag='', table=None):
     """Threading from the reset/interrupt vectors at the top of a random image."""
     out = []
-    origin = 0x10000 - size
+    if origin is None:
+        origin = 0x10000 - size
     sym = [f'cpu {cpu}'] + [f'vector {v:#x} vec{v:04X} ent{v:04X}' for v in vectors]
     sym = ('\n'.join(sym) + '\n').encode()
     for seed in range(seeds):
-        img = bytearray(random_image(200 + seed, size))
+        if table:
+            img = bytearray(program_image(300 + seed, size, table))
+        else:
+            img = bytearray(random_image(200 + seed, size))
         rng = random.Random(seed)
         for v in vectors:
             target = origin + rng.randrange(size - 0x100)
             hi, lo = target >> 8, target & 0xFF
             img[v - origin], img[v - origin + 1] = (hi, lo) if big_endian else (lo, hi)
         files = {'vec.bin': bytes(img), 'vec.sym': sym}
-        out.append(case(f'{cpu}-thread{seed}', files, ['-t', f'-o{origin:#x}', 'vec.bin']))
-        out.append(case(f'{cpu}-thread-wide{seed}', files, ['-t', '-w', f'-o{origin:#x}', 'vec.bin']))
+        out.append(case(f'{cpu}-thread{tag}{seed}', files, ['-t', f'-o{origin:#x}', 'vec.bin']))
+        out.append(case(f'{cpu}-thread{tag}-wide{seed}', files, ['-t', '-w', f'-o{origin:#x}', 'vec.bin']))
     return out
 
 
@@ -92,11 +128,29 @@ def m6502_cases():
     out = family_cases(M6502_CPUS, ((0x12, 0x34), (0xC0, 0x10), (0xFF, 0xC1)))
     for cpu in M6502_CPUS:
         out += vector_thread_cases(cpu, (0xFFFA, 0xFFFC, 0xFFFE), big_endian=False)
+        out += vector_thread_cases(cpu, (0xFFFA, 0xFFFC, 0xFFFE), big_endian=False, tag='-prog',
+                                   table=TABLES[cpu])
+    return out
+
+
+def m6805_cases():
+    out = family_cases(M6805_CPUS, ((0x12, 0x34), (0xC0, 0x10), (0x03, 0xF0)))
+    for cpu in M6805_CPUS:
+        # Vectors at the top of the (small) address space; origin 0 so the image covers them
+        out += vector_thread_cases(cpu, (0xFFF6, 0xFFF8, 0xFFFA, 0xFFFC, 0xFFFE), big_endian=True)
+        # Relative branches wrap at 11 bits, so also thread a 2K image at address 0
+        out += vector_thread_cases(cpu, (0x7F6, 0x7F8, 0x7FA, 0x7FC, 0x7FE), big_endian=True,
+                                   size=0x800, origin=0, tag='-low')
+        out += vector_thread_cases(cpu, (0x7F6, 0x7F8, 0x7FA, 0x7FC, 0x7FE), big_endian=True,
+                                   size=0x800, origin=0, tag='-prog', table=TABLES[cpu])
     return out
 
 
 def m6800_cases():
     out = family_cases(M6800_CPUS)
+    for cpu in M6800_CPUS:
+        out += vector_thread_cases(cpu, (0xFFF8, 0xFFFA, 0xFFFC, 0xFFFE), big_endian=True, tag='-prog',
+                                   table=TABLES[cpu])
 
     # Number formats
     for nf in NUMFORMATS:
@@ -169,4 +223,4 @@ def symfile_cases():
 
 
 def all_cases():
-    return m6800_cases() + m6502_cases() + option_cases() + symfile_cases()
+    return m6800_cases() + m6502_cases() + m6805_cases() + option_cases() + symfile_cases()

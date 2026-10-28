@@ -5,6 +5,7 @@
 #include "dasmy.h"
 #include "cpu_6502.h"
 #include "cpu_6800.h"
+#include "cpu_6805.h"
 
 const CpuDesc *cpu;
 
@@ -15,6 +16,16 @@ const CpuDesc *cpu;
 #define M6502_FAMILY(name, part, mfr, fam, decode) \
     { name, part, mfr, fam, 0, 1, 3, 0, 0xFFFF, 8, 0, 0, 0, 'M', \
       decode, m6502_pass1, m6502_format, m6502_thread }
+
+#define M6805_FAMILY(name, part, mfr, fam, addr_max, decode) \
+    { name, part, mfr, fam, 1, 1, 3, 0, addr_max, 8, 0, 0, 0, 'M', \
+      decode, m6805_pass1, m6805_format, m6805_thread }
+
+static const CpuDesc cpu_63l05 = M6805_FAMILY("63L05", "HD63L05", "Hitachi", "63L05", 0xFFF, m63l05_decode);
+static const CpuDesc cpu_6305 = M6805_FAMILY("6305", "HD6305", "Hitachi", "6305", 0x3FFF, m6305_decode);
+static const CpuDesc cpu_6805 = M6805_FAMILY("6805", "MC6805", "Motorola", "6805", 0xFFF, m6805_decode);
+static const CpuDesc cpu_68hc05 = M6805_FAMILY("68HC05", "MC68HC05", "Motorola", "68HC05", 0x1FFF, m68hc05_decode);
+static const CpuDesc cpu_68hc705 = M6805_FAMILY("68HC705", "MC68HC705", "Motorola", "68HC05", 0x1FFF, m68hc05_decode);
 
 static const CpuDesc cpu_6502 = M6502_FAMILY("6502", "MCS6502", "MOS Technology", "MCS6500", m6502_decode);
 static const CpuDesc cpu_65c00 = M6502_FAMILY("65C00", "R65C00", "Rockwell", "65C00/21 & 65C29", m65c00_decode);
@@ -34,8 +45,8 @@ static const CpuDesc cpu_6808 = M6800_FAMILY("6808", "M6808", "Motorola", "6800/
 /* In the order of the original's table (and its -l listing) */
 const CpuDesc *const cpu_list[] = {
     &cpu_6502, &cpu_65c00, &cpu_65c29, &cpu_65c02, &cpu_65c102, &cpu_65c112,
-    &cpu_6301, &cpu_6303,
-    &cpu_6800, &cpu_6801, &cpu_6802, &cpu_6803, &cpu_6808,
+    &cpu_6301, &cpu_6303, &cpu_63l05, &cpu_6305,
+    &cpu_6800, &cpu_6801, &cpu_6802, &cpu_6803, &cpu_6805, &cpu_68hc05, &cpu_68hc705, &cpu_6808,
     NULL
 };
 

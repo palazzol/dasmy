@@ -11,23 +11,25 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
 - **CPUs ported:**
   - 6800 family (6800, 6801, 6802, 6803, 6808, 6301, 6303): `cpu_6800.c`.
   - 6502 family (6502, 65C00, 65C29, 65C02, 65C102, 65C112): `cpu_6502.c`.
+  - 6805 family (6805, 68HC05, 68HC705, 63L05, 6305): `cpu_6805.c`.
 
   Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 115/116 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+- **Result: 259/260 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
 
 **Not done yet**
-- **Remaining CPU modules** (see the CPU table below): 6805 family, 6809, Z80/NSC800, LR35902, 8080/8085, 8048,
+- **Remaining CPU modules** (see the CPU table below): 6809, Z80/NSC800, LR35902, 8080/8085, 8048,
   8051, PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
   (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
   Workflow per family:
   1. Find the table addresses in the decode functions.
   2. Map each case with `re/scripts/switch.py`.
   3. Read each case's stack offsets in `core.asm`.
-  4. Add tests with `family_cases()` / `vector_thread_cases()` in `tests/cases.py`.
+  4. Add tests with `family_cases()` / `vector_thread_cases()` in `tests/cases.py`, and the CPU's table to `TABLES` there.
+     `program_image()` builds images from valid instructions only, so threading reaches much more code than with random bytes.
 - **Second address space:** the 8051's separate data space (`addr2_bits`) is only partly handled; data labels are suppressed in the listing.
 - **Unit size:** 16-bit units (PIC) are untested end to end.
 - **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
@@ -138,6 +140,19 @@ Opcode tables use 20-byte entries `{ mnemonic, operand_fmt, flags, cycles?, ? }`
   - Pass 1 labels the pointer (X) and, if both pointer bytes are in the image, its target (L).
   - Threading follows the target, or prints "Ignoring indirect jump outside ROM via %04X at address %04X".
 - **`(zp)`:** pass 1 labels the zp pointer and, if in the image, the word it points to (as data).
+
+## 6805 family module
+
+- **Tables:** 6805 0x424e18, 68HC05/68HC705 0x428a18, 63L05 0x426218, 6305 0x427618. Big endian, 'M'.
+  addr_max is 0xFFF / 0x1FFF / 0xFFF / 0x3FFF, but that only affects the `%04X`/`%08X` choice.
+- **Relative branch targets are masked with 0x7FF for every variant** (pass 1, format and threading), so branches above 2K are wrong in the original.
+- **Addressing types:**
+  - 1: inherent. The table text (e.g. `",x"`) is copied; with OPF_CODEREF (`jmp`/`jsr ,x`) it adds INFO "index jump".
+  - 2: rel. 4: extended. 6: imm8.
+  - 5: direct. The table text, if present, is a printf format such as `"0,%s"` (`bset`/`bclr`).
+  - 0x4B: `brset`/`brclr`. Table text `"n,"`, then the direct address, `","`, and the target (pc+3+rel).
+  - 0x50 / 0x51: 8-bit / 16-bit `offset,x`. The offset goes through the symbol lookup, so it's an `L` label when OPF_CODEREF.
+- **Threading:** indexed jumps print "Ignoring index branch opcode %02X %02X [%02X] at address %04X".
 
 ## Memory map (object at 0x43eba0) types
 
