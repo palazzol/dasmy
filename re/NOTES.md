@@ -1,0 +1,192 @@
+# DASMx 1.40 reverse-engineering notes
+
+Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1.40
+(`original/Dasmx.exe`, Win32 console, MSVC, built Oct 18 2003).
+
+## Status (2026-10-27)
+
+**Done**
+- **Core ported** to C99 in `dasmy/src/`: command line, file handling, symbol file (both passes), symbol table (same hash and probe order),
+  memory map, threading, passes 1 and 2, listing/asm/wide output, header, symbol table listing, statistics.
+- **CPUs ported:** the 6800 family only (6800, 6801, 6802, 6803, 6808, 6301, 6303). Opcode tables are generated from the binary by
+  `re/scripts/gentables.py` into `dasmy/src/tables/m6800_tab.c`.
+- **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
+- **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
+  inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
+  The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
+- **Result: 70/71 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+
+**Not done yet**
+- **Remaining CPU modules** (see the CPU table below): 6805 family, 6809, 6502 family, Z80/NSC800, LR35902, 8080/8085, 8048,
+  8051, PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
+  (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
+- **Second address space:** the 8051's separate data space (`addr2_bits`) is only partly handled; data labels are suppressed in the listing.
+- **Unit size:** 16-bit units (PIC) are untested end to end.
+- **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
+- **README:** Dasmy has no README or usage documentation of its own yet.
+
+**Deliberate differences from DASMx**
+- **Banner and header:** these name Dasmy instead of DASMx (`DASMY_*` in `dasmy.h`).
+- **Out-of-image reads:** where the original read outside the image buffer (undefined behaviour), Dasmy reads 0.
+- **Output file name:** an input file that exists without an extension crashes the original. Dasmy appends `.lst`/`.asm`.
+- **Path separators:** both `/` and `\` count as path separators when finding the extension.
+- **Statistics:** a statistics run with no unskipped bytes divides by zero in the original. Dasmy prints 0%.
+
+## Tooling
+
+- `re/scripts/ExportDecomp.java`: Ghidra headless export. It writes `re/out/decompiled.c`, `functions.txt` and `strings.txt`.
+  ```
+  /opt/ghidra/support/analyzeHeadless <projdir> dasmx -import original/Dasmx.exe -overwrite \
+      -scriptPath re/scripts -postScript ExportDecomp.java re/out
+  ```
+- `re/out/core.asm`: `objdump -d -M intel --start-address=0x401000 --stop-address=0x409200 original/Dasmx.exe`.
+  Use it where Ghidra lost arguments. Many internal functions pass arguments in registers (`in_EAX`, `unaff_EDI`, `unaff_ESI`),
+  and the varargs to `out_tab_printf` (0x402330) were dropped.
+- `re/scripts/pe.py`: reads `Dasmx.exe` data by virtual address (`u32`, `cstr`, `bytes`).
+- **Reference runs:** `WINEDEBUG=-all wine Dasmx.exe ...` works. Strip `\r`. Ignore the MESA-EGL noise on stderr.
+- **Address ranges:** DASMx's own code is 0x401000–~0x408f80. The C runtime follows from 0x4091a2.
+
+## Top-level flow
+
+| VA | Role |
+|---|---|
+| 0x4018e0 | `main`: parse_args, banner, (no file → usage), signals, open_files, run, close |
+| 0x401360 | parse_args: getopt `"ac:e:lo:tvw"` (custom getopt at 0x401a70) |
+| 0x4014e0 | open_files: open input `rb`; if it fails and the name has no extension, append `.bin`. Output is `<base>.lst`/`.asm` (`w`). Symbol file is `<base>.sym` (`r`, optional) |
+| 0x4016f0 | run, see below |
+| 0x401000 / 0x401060 | `error()`: "ERROR - %s\n" to stderr, then exit(1). `warning()`: "WARNING - %s\n"; the 10th warning is fatal: "maximum number of warnings exceeded". Trailing `\n`s are stripped before printing |
+| 0x4010e0 | Banner on stdout: `"\n%s\n"` title, 30 `=`, `"\n%s\n"` copyright, `"Version %d.%02d (%s)\n\n"` 1, 40, "Oct 18 2003" |
+
+**run (0x4016f0):**
+1. If there's a .sym file: run sym pass A (`cpu`, `org`, `include` only), then rewind.
+2. If no CPU is set: error "must specify CPU type". The docs say the default is 6800, but it isn't.
+3. Print `"CPU: %s %s (%s family)\n"` (manufacturer, short CPU name such as "6800", family). Get the file length and print `"Source file length: %d bytes\n"`.
+4. Units = length / (data_bits/8). Number format = the CPU default.
+5. Origin: the sentinel 0xFFFF means unset, so it becomes 0 ("Origin now defaults to 0" in 1.40). Note that `-o0xFFFF` therefore also gives 0.
+6. Load the image. Mark memory type 1 (unknown ROM) if threading, otherwise 2 (code).
+7. Allocate the symbol tables. If there's a .sym file: run sym pass B (all other commands).
+8. If `-t`: add the `-e` entry if given, print "Threading code...\n", thread.
+9. "Pass 1...\n" (collect labels), "Pass 2...\n", header, listing.
+10. Symbol table (listing mode only). If threading: statistics (code/data/unknown/skipped bytes).
+
+## Command line
+
+| Option | Effect |
+|---|---|
+| `-a` | Assembler output (`.asm`) |
+| `-cTYPE` | CPU; error if unknown. Matched case-insensitively against `cpu.name` |
+| `-eNNNN` | Entry point (`%i`) |
+| `-l` | Banner + CPU list + exit(0) |
+| `-oNNNN` | Origin (`%i`) |
+| `-t` | Threading |
+| `-v` | Banner + exit(0) |
+| `-w` | Wide listing |
+
+The last positional argument is used only when exactly one is left (`argc - optind == 1`); otherwise the usage text is printed.
+
+## CPU descriptor (0x43d058: NULL-terminated array of pointers to 72-byte structs)
+
+`{ name, part, manufacturer, family, big_endian, unit_bytes?, max_insn_len, addr_min, addr_max, data_bits, ?, addr2_max, addr2_bits, numformat, decode, pass1, format, thread }`
+
+| CPU | decode | pass1 | format | thread | notes |
+|---|---|---|---|---|---|
+| 6800/6802/6808 | 0x4063e0 | 0x4064d0 | 0x4065d0 | 0x408f90 | big endian, max len 3, 'M' |
+| 6801/6803 | 0x406430 | " | " | " | |
+| 6301/6303 | 0x406480 | " | " | " | |
+| 6809 | 0x405b60 | 0x4060e0 | 0x4061f0 | 0x408e80 | max len 5 |
+| 6805 / 68HC05 / 63L05 / 6305 | 0x406850 / 0x4068a0 / 0x4068f0 / 0x406940 | 0x406990 | 0x406ac0 | 0x406de0 | addr_max 0xfff/0x1fff/0xfff/0x3fff |
+| 6502 / 65C00,65C29 / 65C02,65C102,65C112 | 0x406f70 / 0x406fc0 / 0x407010 | 0x407060 | 0x407240 | 0x409050 | little endian |
+| Z80, NSC800 | 0x408b40 | 0x404510 | 0x4045e0 | 0x408ac0 | max len 4, 'I' |
+| LR35902 | 0x404c10 | 0x404ca0 | 0x404d80 | 0x408ac0 | |
+| 8080 / 8085 | 0x404fb0 / 0x405000 | 0x405050 | 0x4050c0 | 0x4051d0 | |
+| 8048 | 0x405960 | 0x4059a0 | 0x405a10 | 0x408e10 | addr_max 0xfff |
+| 8051 | 0x405230 | 0x405280 | 0x4054a0 | 0x408cd0 | second address space 0..0xffff |
+| PIC16F83 / F84 | 0x404940 | 0x404970 | 0x4049c0 | 0x404bc0 | 16-bit units, addr_max 0x1ff/0x3ff, 'C' |
+| 2650 | 0x4076c0 | 0x407710 | 0x4078a0 | 0x407c70 | addr_max 0x7fff, 'S' |
+| 1802 / 1805 | 0x407e60 / 0x407ec0 | 0x407f50 | 0x408050 | 0x408230 | 'R' |
+
+Opcode tables use 20-byte entries `{ mnemonic, operand_fmt, flags, cycles?, ? }`.
+- **`flags & 0xff`:** the addressing type.
+- **`flags & 0x100`:** ends a thread / sequence break (unconditional jump, return).
+- **`flags & 0x200`:** indexed / indirect jump.
+- **`flags & 0x1000`:** shows a `+` after the cycle count.
+- **Cycles:** low byte = minimum; the next byte is the extra amount added for the maximum (`[min/max]`).
+
+## Memory map (object at 0x43eba0) types
+
+`0` = skipped/outside, `1` = unknown ROM (threading not yet reached it), `2` = code, `4` = byte, `5` = word, `6` = dword, `7` = string.
+
+## Symbol table
+
+- **Layout:** an open-addressed hash of 0xfff1 slots × 20 bytes. The hash is `byteswap16(value) % 0xfff1`, with linear probing.
+  Entry: `{ name*, length, subtype, value, type(u8) }`. Names live in a 400000-byte string pool.
+- **Full table:** above 0xffef entries, `warning("symbol table full")`.
+- **Types:** 4 = code label (L), 5 = data label (X). User `symbol` entries are also type 5 (Data); type 3 "Val " is never used.
+  Type names for the table are at 0x43d0e8 (still to dump).
+- **Generated names:** `L%04X` (code), `X%04X` (data); `%c%04X` picks L or X.
+- **Listing order:** the table is walked by value 0..0xffff. Within a value, entries come out in probe order from the home slot.
+- **Format:** `"%04X\t\t%s\t%s\n"` (value, type name, name); `%08X\t%s\t%s\n` when addr_max > 0xffff.
+  Then `"\nNumber of symbols:\t\t\t%d\n\n"` and the dashed rule.
+
+## .sym commands (keyword table at 0x4128c0)
+
+Index: 0 org, 1 cpu, 2 code, 3 vector, 4 vectab, 5 addrtab, 6 byte, 7 word, 8 dword, 9 string, 10 symbol,
+11 comment (→ error "command "comment" not yet implemented"), 12 skip, 13 include, 14 message, 15 numformat.
+(Verified by dumping 0x4128c0.)
+
+- **Line handling:** each line is read with `fgets(256)`, truncated at the first `;`, split on whitespace (max 20 tokens).
+  The keyword match is case-insensitive (`_stricmp`, 0x4118f0).
+- **Pass A:** org, cpu, include (recursive, pass A). An unknown keyword gives `error("invalid command "%s" in symbol file")`.
+- **Pass B:** all the others, plus include (recursive, pass B).
+- **Number parsing:** all numbers use `sscanf("%i")`.
+- `org` with origin already set: warning "org statement in symbol file ignored". `cpu` with CPU already set: warning "cpu statement in symbol file ignored".
+- `code a [name] [count]`: adds an entry point. With a name, adds a type-4 symbol; without one, adds an auto `L%04X`.
+  With a count, adds entry points at a+1 … a+count−1 (**count is in units, not instructions**, despite the docs).
+- `byte/word/dword/string a name [count]`: adds a symbol and marks memory types 4/5/6/7 for count×1/2/4/1 bytes.
+- `vector a [vname] [dname]`: a vname marks the word as type 5. If the word is type 5, its target becomes an entry point; a dname names the target.
+- `vectab/addrtab a name [count]`: marks count words as type 5. vectab adds each target as an entry point plus an `L` label; addrtab adds `X` labels.
+- `skip a count`: marks type 0.
+- `message ...`: prints the arguments separated by spaces, then `\n`, to stdout.
+- `numformat X`: must be one character from A C D I M R S (case-insensitive).
+
+## Number formats (0x404210 byte, 0x404310 word, 0x404410 dword)
+
+| Fmt | Byte | Word | Dword |
+|---|---|---|---|
+| A | `&%02X` | `&%04X` | `&%08X` |
+| C | `0x%02X` | `0x%04X` | `0x%08X` |
+| D | `%d` | `%d` | `%d` |
+| I | `0%02XH` | `0%04XH` | `0%08XH` |
+| M | `$%02X` | `$%04X` | `$%08X` |
+| R | `#%02X` | `#%04X` | `#%08X` |
+| S | `H'%02X'` | `H'%04X'` | `H'%08X'` |
+
+## Listing output
+
+- **Line format (0x402450):** `"%04X : "`, hex bytes, tab-pad, `"ascii"`, (wide: tab-pad `[n]`, `[n/m]` or `[n+]`), tab-pad, mnemonic, tab-pad, operands, optional `INFO: ...`.
+  In listing mode, continuation lines show the bytes that don't fit on the first line.
+  Bytes per line come from the table at 0x413950, indexed by unit size, and are doubled when wide.
+- **Tab padding (0x4022e0):** pads to a column with tabs, then spaces.
+- **Sequence break (0x402400):** a separator line whenever code/data changes, or after a flags & 0x100 instruction.
+- **Labels (0x403320):** `"%04X\t\t\t\t"` (listing; plus `"\t\t\t"` when wide), then `"%s:\n"`. Code labels (type 4) are printed always; data labels (type 5) only when not in asm mode (**check**: the condition is `DAT_0043eb80 == 0`).
+- **Header (0x401190):** ";" lines, Disassembled by, File, Size, Checksum (16-bit sum, `%04X`), CRC-32 (CCITT, `%08X`), Date (`ctime`), CPU.
+  In listing mode each line is prefixed with 4 tabs (to be confirmed). Then `org`.
+
+## Threading (0x402c30 / 0x402b40)
+
+- **Entry stack:** at most 0x7ff entries ("code threading entry table full"). It's processed LIFO.
+- **Per thread:**
+  1. Stop if the start is already code.
+  2. While the memory type is 1: decode; if any byte of the instruction isn't type 1, print "Premature end of thread".
+  3. On an invalid instruction, print "Thread terminated: invalid instruction at address %04X".
+  4. Otherwise mark the bytes as code (2) and call cpu.thread (which pushes branch/call targets).
+  5. Stop on flags & 0x100.
+- **Non-ROM targets:** entries outside ROM print "Ignoring non-ROM code entry point %04X". Branches outside ROM print "Ignoring branch outside ROM to %04X at address %04X".
+
+## Differences from the manual (behaviour to replicate)
+
+- There's no default CPU; it errors instead (the manual says 6800).
+- The default origin is 0 (the manual's option table says top of memory, but the 1.40 changelog says 0).
+- The `code` count is in bytes/units.
+- `comment` is a keyword, but it is "not yet implemented" (fatal).
+- `-l` also lists 68HC705, 65C29 and NSC800. 65C59 appears in the manual's `cpu` syntax but isn't a real type.
