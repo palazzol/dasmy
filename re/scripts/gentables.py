@@ -25,6 +25,9 @@ TABLES = {
     'lr35902': [('tab_lr35902', 0x414ed0, 256), ('tab_lr35902_cb', 0x4162d0, 256)],
     'i8048': [('tab_8048', 0x41bb70, 256)],
     'i8051': [('tab_8051', 0x41a498, 256)],
+    'pic16': [('tab_pic16', 0x413968, 128), ('tab_pic16_00', 0x414368, 128)],
+    's2650': [('tab_2650', 0x42dcc0, 256)],
+    'r1802': [('tab_1802', 0x42f710, 256), ('tab_1805_68', 0x430b10, 256)],
     'm6502': [('tab_6502', 0x429f68, 256), ('tab_65c00', 0x42b368, 256), ('tab_65c02', 0x42c768, 256)],
 }
 
@@ -32,6 +35,7 @@ TABLES = {
 # name -> list of (array name, VA, count) for signed byte arrays
 # name -> list of (array name, VA, count) for arrays of string pointers (NULL allowed)
 STRING_ARRAYS = {
+    's2650': [('s2650_index_regs', 0x43e1c0, 4)],
     'i8051': [('m8051_bit_names', 0x43d348, 256), ('m8051_sfr_names', 0x43d748, 256)],
 }
 

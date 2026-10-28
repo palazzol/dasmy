@@ -7,6 +7,7 @@ All images are synthetic (opcode sweeps and seeded random data).
 import os
 import random
 import re
+import struct
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(ROOT, 'original', 'examples')
@@ -23,7 +24,8 @@ TABLES = {'6800': 'tab_6800', '6801': 'tab_6801', '6301': 'tab_6301',
           '6502': 'tab_6502', '65C00': 'tab_65c00', '65C02': 'tab_65c02',
           '6805': 'tab_6805', '68HC05': 'tab_68hc05', '63L05': 'tab_63l05', '6305': 'tab_6305',
           '6809': 'tab_6809', '8080': 'tab_8080', '8085': 'tab_8085', 'Z80': 'tab_z80',
-          'NSC800': 'tab_z80', 'LR35902': 'tab_lr35902', '8048': 'tab_8048', '8051': 'tab_8051'}
+          'NSC800': 'tab_z80', 'LR35902': 'tab_lr35902', '8048': 'tab_8048', '8051': 'tab_8051',
+          '2650': 'tab_2650', '1802': 'tab_1802', '1805': 'tab_1802'}
 NUMFORMATS = 'ACDIMRS'
 
 
@@ -85,8 +87,13 @@ def random_image(seed, size):
     return bytes(rng.randrange(256) for _ in range(size))
 
 
-def family_cases(cpus, operand_sets=((0x12, 0x34), (0xC0, 0x10))):
-    """Opcode sweeps and random images for each CPU of a family."""
+def family_cases(cpus, operand_sets=((0x12, 0x34), (0xC0, 0x10)), rand_origin=0xF800):
+    """Opcode sweeps and random images for each CPU of a family.
+
+    rand_origin must keep the image inside the CPU's address space: operand
+    addresses wrap at its size, and reads below the image are undefined in
+    the original (it reads memory before its buffer).
+    """
     out = []
     for cpu in cpus:
         # Opcode sweeps: listing, wide listing and assembler output
@@ -101,9 +108,9 @@ def family_cases(cpus, operand_sets=((0x12, 0x34), (0xC0, 0x10))):
         # Random images, no threading
         for seed in range(3):
             files = {'rand.bin': random_image(seed, 2048)}
-            out.append(case(f'{cpu}-random{seed}', files, [f'-c{cpu}', '-o0xF800', 'rand.bin']))
+            out.append(case(f'{cpu}-random{seed}', files, [f'-c{cpu}', f'-o0x{rand_origin:04X}', 'rand.bin']))
         out.append(case(f'{cpu}-random-wide', {'rand.bin': random_image(7, 2048)},
-                        [f'-c{cpu}', '-w', '-o0xF800', 'rand.bin']))
+                        [f'-c{cpu}', '-w', f'-o0x{rand_origin:04X}', 'rand.bin']))
     return out
 
 
@@ -231,6 +238,58 @@ def mcs_cases():
     return out
 
 
+def pic_words(words):
+    return b''.join(struct.pack('<H', w) for w in words)
+
+
+def pic_cases():
+    out = []
+    every = pic_words(range(0x4000))
+    for cpu in ('PIC16F83', 'PIC16F84'):
+        out.append(case(f'{cpu}-all-opcodes', {'all.bin': every}, [f'-c{cpu}', 'all.bin']))
+    out.append(case('PIC16F84-all-opcodes-wide', {'all.bin': every}, ['-cPIC16F84', '-w', 'all.bin']))
+    out.append(case('PIC16F84-all-opcodes-asm', {'all.bin': every}, ['-cPIC16F84', '-a', 'all.bin']))
+    out.append(case('PIC16F84-bad-opcode', {'bad.bin': pic_words([0x0000, 0x4000, 0x0000])}, ['-cPIC16F84', 'bad.bin']))
+    out.append(case('PIC16F84-odd-length', {'odd.bin': pic_words(range(0x2800, 0x2810)) + b'\x01'},
+                    ['-cPIC16F84', 'odd.bin']))
+    for seed in range(3):
+        rng = random.Random(700 + seed)
+        img = pic_words(rng.randrange(0x4000) for _ in range(0x400))
+        sym = b'cpu PIC16F84\ncode 0 reset\ncode 4 interrupt\n'
+        files = {'pic.bin': img, 'pic.sym': sym}
+        out.append(case(f'PIC16F84-thread{seed}', files, ['-t', 'pic.bin']))
+        out.append(case(f'PIC16F84-thread-wide{seed}', files, ['-t', '-w', 'pic.bin']))
+        out.append(case(f'PIC16F84-random{seed}', {'pic.bin': img}, ['-cPIC16F84', 'pic.bin']))
+    # Data directives with 16-bit units
+    img = pic_words(random.Random(9).randrange(0x4000) for _ in range(0x100))
+    sym = (b'cpu PIC16F84\nbyte 0x10 b1 3\nword 0x20 w1 2\nstring 0x30 s1 6\ndword 0x40 d1 1\n'
+           b'symbol 0x50 sym\nnumformat M\n')
+    out.append(case('PIC16F84-data', {'pic.bin': img, 'pic.sym': sym}, ['pic.bin']))
+    out.append(case('PIC16F84-data-wide', {'pic.bin': img, 'pic.sym': sym}, ['-w', 'pic.bin']))
+    return out
+
+
+def s2650_cases():
+    # Operands: plain, indirect (bit 7 / bit 15), and each index mode (bits 13-14)
+    operand_sets = ((0x12, 0x34), (0x92, 0x34), (0x20, 0x10), (0x40, 0x10), (0x60, 0x10), (0xC0, 0x10), (0x7F, 0xFF))
+    out = family_cases(['2650'], operand_sets, rand_origin=0x7800)
+    out += code_thread_cases('2650', (0x0000, 0x0003, 0x0010), size=0x2000)
+    out += code_thread_cases('2650', (0x0000, 0x0003), size=0x8000, tag='-32k', seeds=1)
+    return out
+
+
+def r1802_cases():
+    out = family_cases(['1802', '1805'], ((0x12, 0x34), (0xC0, 0x10), (0x68, 0x86, 0xC0)))
+    # 1805 extended instructions: every byte after the 0x68 prefix
+    files = {'sweep.bin': sweep_image(slot=6, prefix=(0x68,), operands=(0xC0, 0x10)),
+             'sweep.sym': sweep_sym('1805', 0xC000, slot=6)}
+    out.append(case('1805-sweep-68', files, ['sweep.bin']))
+    out.append(case('1805-sweep-68-wide', files, ['-w', 'sweep.bin']))
+    for cpu in ('1802', '1805'):
+        out += code_thread_cases(cpu, (0x0000, 0x0010), size=0x1000)
+    return out
+
+
 def m6800_cases():
     out = family_cases(M6800_CPUS)
     for cpu in M6800_CPUS:
@@ -308,4 +367,4 @@ def symfile_cases():
 
 
 def all_cases():
-    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + intel_cases() + mcs_cases() + option_cases() + symfile_cases()
+    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + intel_cases() + mcs_cases() + pic_cases() + s2650_cases() + r1802_cases() + option_cases() + symfile_cases()

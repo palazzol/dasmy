@@ -3,6 +3,8 @@
 #include <ctype.h>
 
 #include "dasmy.h"
+#include "cpu_1802.h"
+#include "cpu_2650.h"
 #include "cpu_6502.h"
 #include "cpu_6800.h"
 #include "cpu_6805.h"
@@ -10,6 +12,7 @@
 #include "cpu_8048.h"
 #include "cpu_8051.h"
 #include "cpu_8080.h"
+#include "cpu_pic16.h"
 #include "cpu_z80.h"
 
 const CpuDesc *cpu;
@@ -51,8 +54,21 @@ static const CpuDesc cpu_nsc800 = INTEL_STYLE("NSC800", "NSC800", "National Semi
 static const CpuDesc cpu_z80 = INTEL_STYLE("Z80", "Z80", "Zilog", "Z80", 4,
                                            z80_decode, z80_pass1, z80_format, z80_thread);
 
+/* 16-bit units (one 14-bit instruction each), default number format C */
+static const CpuDesc cpu_pic16f83 = { "PIC16F83", "PIC16F83", "Microchip", "PIC16CXXX", 0, 2, 2, 0, 0x1FF, 16, 0, 0, 0, 'C',
+                                      pic16_decode, pic16_pass1, pic16_format, pic16_thread };
+static const CpuDesc cpu_pic16f84 = { "PIC16F84", "PIC16F84", "Microchip", "PIC16CXXX", 0, 2, 2, 0, 0x3FF, 16, 0, 0, 0, 'C',
+                                      pic16_decode, pic16_pass1, pic16_format, pic16_thread };
+
 static const CpuDesc cpu_6809 = { "6809", "M6809", "Motorola", "6809", 1, 1, 5, 0, 0xFFFF, 8, 0, 0, 0, 'M',
                                   m6809_decode, m6809_pass1, m6809_format, m6809_thread };
+
+static const CpuDesc cpu_1802 = { "1802", "CDP1802", "RCA", "1802 COSMAC", 1, 1, 3, 0, 0xFFFF, 8, 0, 0, 0, 'R',
+                                  r1802_decode, r1802_pass1, r1802_format, r1802_thread };
+static const CpuDesc cpu_1805 = { "1805", "CDP1805", "RCA", "1805/1806", 1, 1, 3, 0, 0xFFFF, 8, 0, 0, 0, 'R',
+                                  r1805_decode, r1802_pass1, r1802_format, r1802_thread };
+static const CpuDesc cpu_2650 = { "2650", "SCN2650", "Signetics", "2650", 1, 1, 3, 0, 0x7FFF, 8, 0, 0, 0, 'S',
+                                  s2650_decode, s2650_pass1, s2650_format, s2650_thread };
 
 static const CpuDesc cpu_6502 = M6502_FAMILY("6502", "MCS6502", "MOS Technology", "MCS6500", m6502_decode);
 static const CpuDesc cpu_65c00 = M6502_FAMILY("65C00", "R65C00", "Rockwell", "65C00/21 & 65C29", m65c00_decode);
@@ -71,11 +87,12 @@ static const CpuDesc cpu_6808 = M6800_FAMILY("6808", "M6808", "Motorola", "6800/
 
 /* In the order of the original's table (and its -l listing) */
 const CpuDesc *const cpu_list[] = {
+    &cpu_1802, &cpu_1805, &cpu_2650,
     &cpu_6502, &cpu_65c00, &cpu_65c29, &cpu_65c02, &cpu_65c102, &cpu_65c112,
     &cpu_6301, &cpu_6303, &cpu_63l05, &cpu_6305,
     &cpu_6800, &cpu_6801, &cpu_6802, &cpu_6803, &cpu_6805, &cpu_68hc05, &cpu_68hc705, &cpu_6808, &cpu_6809,
     &cpu_8048, &cpu_8051, &cpu_8080, &cpu_8085, &cpu_lr35902, &cpu_nsc800,
-    &cpu_z80,
+    &cpu_pic16f83, &cpu_pic16f84, &cpu_z80,
     NULL
 };
 

@@ -3,7 +3,7 @@
 Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1.40
 (`original/Dasmx.exe`, Win32 console, MSVC, built Oct 18 2003).
 
-## Status (2026-10-28)
+## Status (2026-10-28): all CPUs ported
 
 **Done**
 - **Core ported** to C99 in `dasmy/src/`: command line, file handling, symbol file (both passes), symbol table (same hash and probe order),
@@ -16,32 +16,32 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
   - 8080, 8085: `cpu_8080.c`.
   - Z80, NSC800, LR35902: `cpu_z80.c`.
   - 8048: `cpu_8048.c`. 8051: `cpu_8051.c`.
+  - PIC16F83/84: `cpu_pic16.c` (16-bit units).
+  - 2650: `cpu_2650.c`. 1802/1805: `cpu_1802.c`.
+
+  **All 31 CPU types listed by `-l` are implemented.**
 
   Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 407/408 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+- **Result: 479/479 cases pass.**
+- **Second address space:** the 8051's separate data space (`addr2_bits`) is covered by tests. In the original, its only effect is that
+  data labels aren't printed in the code listing; data symbols still name operands and appear in the symbol table.
 
 **Not done yet**
-- **Remaining CPU modules** (see the CPU table below): PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
-  (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
-  Workflow per family:
-  1. Find the table addresses in the decode functions.
-  2. Map each case with `re/scripts/switch.py`.
-  3. Read each case's stack offsets in `core.asm`.
-  4. Add tests with `family_cases()` / `vector_thread_cases()` in `tests/cases.py`, and the CPU's table to `TABLES` there.
-     `program_image()` builds images from valid instructions only, so threading reaches much more code than with random bytes.
-- **Second address space:** the 8051's separate data space (`addr2_bits`) is now covered by tests. In the original, its only effect is that
-  data labels aren't printed in the code listing; data symbols still name operands and appear in the symbol table.
-- **Unit size:** 16-bit units (PIC) are untested end to end.
+- **Adding coverage:** to test a CPU further, add cases in `tests/cases.py`: `family_cases()`, `vector_thread_cases()`,
+  `code_thread_cases()`, `program_image()`. To port a variant, read its decode/pass1/format/thread in `core.asm`
+  and map its switches with `re/scripts/switch.py`.
 - **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
 - **README:** Dasmy has no README or usage documentation of its own yet.
 
 **Deliberate differences from DASMx**
 - **Banner and header:** these name Dasmy instead of DASMx (`DASMY_*` in `dasmy.h`).
 - **Out-of-image reads:** where the original read outside the image buffer (undefined behaviour), Dasmy reads 0.
+  This shows up when an image is placed beyond the CPU's address space: operand addresses wrap, then point below the image
+  (e.g. a 2650 image at 0xF800). The tests keep images inside each CPU's address space.
 - **Output file name:** an input file that exists without an extension crashes the original. Dasmy appends `.lst`/`.asm`.
 - **Path separators:** both `/` and `\` count as path separators when finding the extension.
 - **Statistics:** a statistics run with no unskipped bytes divides by zero in the original. Dasmy prints 0%.
@@ -211,6 +211,26 @@ Little endian, 'I'. Relative targets are opaddr+1+off.
     0x41 `direct,#imm`, 0x48 bit, 0x49 `bit,rel`, 0x4A `#imm,rel`, 0x4B `direct,rel`.
     0x4C `mov direct,direct` prints the second operand byte first (the encoding is src, dst).
   - 1 with OPF_CODEREF: `jmp @a+dptr`, INFO "indirect jump".
+
+## PIC16F8x, 2650 and 1802/1805 modules
+
+- **PIC16F83/84:** tables 0x413968 (128 entries, indexed by opcode >> 7) and 0x414368 (opcodes 0x00–0x7F, reached via type 0x70).
+  - Units are 16-bit little-endian words; an opcode wider than 14 bits is fatal ("source image incorrect, non 14-bit opcode found").
+  - Opcodes 0x082/0x782 (`movwf`/`addwf pcl`) get OPF_BREAK|OPF_CODEREF (INFO "index jump").
+  - Types: 5 `goto`/`call` (op & 0x7FF), 0x71 file register (op & 0x7F), 0x72 literal (op & 0xFF, no `#`),
+    0x73 skip (labels and threads pc+1), 0x74 `tris` (op & 7).
+  - Register names: indf, pcl, status, fsr, pclath, intcon. Bank-dependent registers (1, 5, 6, 8, 9) get INFO "register X/Y (bank 0/1)".
+    `bcf`/`bsf status` 0x1003/0x1403/0x1283/0x1683 get "clear carry"/"set carry"/"select bank 0"/"select bank 1".
+- **2650:** table 0x42dcc0, big endian, addr_max 0x7FFF, 'S'. Decode masks opaddr to 15 bits.
+  - Type 2: 7-bit relative within the 8K page. Bit 7 = indirect (`*`); the target then gets a pointer/vector label.
+  - Type 3: absolute with index mode in bits 13–14. The *mnemonic* is a format (`"loda,r%d"`).
+    Mode 0 puts the register there; otherwise it's r0 and the operand gets `,rN`, `,rN,+` or `,rN,-`.
+  - 0x38: absolute branch. 0x39: `zbrr`/`zbsr` (relative to 0).
+  - Threading requires both target bytes in the image, else "Ignoring vector outside ROM at %04X, PC %04X".
+    Indirect: "Ignoring branch indirect outside ROM to %04X via address %04X".
+- **1802/1805:** table 0x42f710. Opcode 0x68 (type 0x62) is invalid on the 1802; on the 1805 the next byte indexes 0x430b10.
+  - Types: 4 long branch, 5 short branch (page of pc+1), 6 imm8.
+  - 0x60/0x61: skip 1/2 bytes, INFO "skip to address <L(pc+2/3)>".
 
 ## Memory map (object at 0x43eba0) types
 
