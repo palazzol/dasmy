@@ -23,11 +23,18 @@ TABLES = {
             ('tab_z80_dd', 0x433538, 256), ('tab_z80_fd', 0x434938, 256),
             ('tab_z80_ddcb', 0x437138, 256), ('tab_z80_fdcb', 0x438538, 256)],
     'lr35902': [('tab_lr35902', 0x414ed0, 256), ('tab_lr35902_cb', 0x4162d0, 256)],
+    'i8048': [('tab_8048', 0x41bb70, 256)],
+    'i8051': [('tab_8051', 0x41a498, 256)],
     'm6502': [('tab_6502', 0x429f68, 256), ('tab_65c00', 0x42b368, 256), ('tab_65c02', 0x42c768, 256)],
 }
 
 
 # name -> list of (array name, VA, count) for signed byte arrays
+# name -> list of (array name, VA, count) for arrays of string pointers (NULL allowed)
+STRING_ARRAYS = {
+    'i8051': [('m8051_bit_names', 0x43d348, 256), ('m8051_sfr_names', 0x43d748, 256)],
+}
+
 BYTE_ARRAYS = {
     'm6809': [('m6809_index_extra', 0x41d130, 256)],
 }
@@ -52,6 +59,12 @@ def emit(pe, out_dir, group, tables):
                 mn, ops, flags, length, cycles = (pe.u32(e + 4 * k) for k in range(5))
                 f.write(f'    /* {i:02X} */ {{ {c_str(pe.cstr(mn))}, {c_str(pe.cstr(ops))}, '
                         f'0x{flags:04X}, {length}, 0x{cycles:X} }},\n')
+            f.write('};\n')
+        for name, va, count in STRING_ARRAYS.get(group, []):
+            f.write(f'\nconst char *const {name}[{count}] = {{\n')
+            for i in range(count):
+                p = pe.u32(va + 4 * i)
+                f.write(f'    /* {i:02X} */ {c_str(pe.cstr(p) if p else None)},\n')
             f.write('};\n')
         for name, va, count in BYTE_ARRAYS.get(group, []):
             data = pe.bytes(va, count)

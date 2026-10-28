@@ -15,17 +15,17 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
   - 6809: `cpu_6809.c`. All the Motorola-style CPUs are now done.
   - 8080, 8085: `cpu_8080.c`.
   - Z80, NSC800, LR35902: `cpu_z80.c`.
+  - 8048: `cpu_8048.c`. 8051: `cpu_8051.c`.
 
   Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 372/373 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+- **Result: 407/408 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
 
 **Not done yet**
-- **Remaining CPU modules** (see the CPU table below): 8048,
-  8051, PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
+- **Remaining CPU modules** (see the CPU table below): PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
   (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
   Workflow per family:
   1. Find the table addresses in the decode functions.
@@ -33,7 +33,8 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
   3. Read each case's stack offsets in `core.asm`.
   4. Add tests with `family_cases()` / `vector_thread_cases()` in `tests/cases.py`, and the CPU's table to `TABLES` there.
      `program_image()` builds images from valid instructions only, so threading reaches much more code than with random bytes.
-- **Second address space:** the 8051's separate data space (`addr2_bits`) is only partly handled; data labels are suppressed in the listing.
+- **Second address space:** the 8051's separate data space (`addr2_bits`) is now covered by tests. In the original, its only effect is that
+  data labels aren't printed in the code listing; data symbols still name operands and appear in the symbol table.
 - **Unit size:** 16-bit units (PIC) are untested end to end.
 - **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
 - **README:** Dasmy has no README or usage documentation of its own yet.
@@ -194,6 +195,22 @@ Little endian, 'I'. Relative targets are opaddr+1+off.
   - Extra types: 2 rel, 3 `(ix+%s)` displacement (unsigned byte format), 0x16 `(ix+%s),%s` displacement + immediate.
 - **LR35902** main 0x414ed0, CB 0x4162d0. Extra types: 5 `$FF00+n` (data label), 0x90 `($FF00+c)` (prints fmt_word(0xFF00)).
 - **Thread:** 0x408ac0 is shared by Z80 and LR35902; it follows rel, address and rst.
+
+## 8048 and 8051 modules
+
+- **8048** table 0x41bb70, addr_max 0xFFF, max length 2, 'I'. Decode returns **pc itself** as opaddr, so operands are fetched at pc+1.
+  - 0x30: in-page conditional jump, target `((pc+1) & 0xFF00) | byte`.
+  - 0x31: `jmp`/`call`, target `(op & 0xE0) << 3 | byte`, 11 bits; the bank bit is not tracked.
+  - 6: imm8 `#n` into the table format.
+  - 1 with OPF_CODEREF: `jmpp @a`, INFO "indirect jump".
+- **8051** table 0x41a498, 'I'. Code addresses are big endian (`img_word_be`), even though the CPU is marked little endian.
+  - Name tables: bit names 0x43d348 (`p0.0`…`b.7`), SFR names 0x43d748 (`p0`, `sp`, `dpl`…).
+    A direct address prints its SFR name, otherwise a data label or value. Pass 1 adds an X label only for non-SFR direct addresses.
+    A bit address prints its bit name, otherwise a byte value.
+  - Types: 2 rel, 4 `ljmp`/`lcall`, 5 direct, 6/7 imm, 0x38 `ajmp`/`acall` (`(op & 0xE0) << 3 | byte | (pc+2) & 0xF800`),
+    0x41 `direct,#imm`, 0x48 bit, 0x49 `bit,rel`, 0x4A `#imm,rel`, 0x4B `direct,rel`.
+    0x4C `mov direct,direct` prints the second operand byte first (the encoding is src, dst).
+  - 1 with OPF_CODEREF: `jmp @a+dptr`, INFO "indirect jump".
 
 ## Memory map (object at 0x43eba0) types
 

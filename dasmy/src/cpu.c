@@ -7,6 +7,8 @@
 #include "cpu_6800.h"
 #include "cpu_6805.h"
 #include "cpu_6809.h"
+#include "cpu_8048.h"
+#include "cpu_8051.h"
 #include "cpu_8080.h"
 #include "cpu_z80.h"
 
@@ -33,6 +35,11 @@ static const CpuDesc cpu_68hc705 = M6805_FAMILY("68HC705", "MC68HC705", "Motorol
 #define INTEL_STYLE(name, part, mfr, fam, max_len, decode, pass1, format, thread) \
     { name, part, mfr, fam, 0, 1, max_len, 0, 0xFFFF, 8, 0, 0, 0, 'I', decode, pass1, format, thread }
 
+static const CpuDesc cpu_8048 = { "8048", "I8048", "Intel", "MCS-48", 0, 1, 2, 0, 0xFFF, 8, 0, 0, 0, 'I',
+                                  i8048_decode, i8048_pass1, i8048_format, i8048_thread };
+/* The only CPU with a separate data address space */
+static const CpuDesc cpu_8051 = { "8051", "I8051", "Intel", "MCS-51", 0, 1, 3, 0, 0xFFFF, 8, 0, 0xFFFF, 8, 'I',
+                                  i8051_decode, i8051_pass1, i8051_format, i8051_thread };
 static const CpuDesc cpu_8080 = INTEL_STYLE("8080", "I8080", "Intel", "MCS-80/85", 3,
                                             i8080_decode, i8080_pass1, i8080_format, i8080_thread);
 static const CpuDesc cpu_8085 = INTEL_STYLE("8085", "I8085", "Intel", "MCS-80/85", 3,
@@ -67,7 +74,7 @@ const CpuDesc *const cpu_list[] = {
     &cpu_6502, &cpu_65c00, &cpu_65c29, &cpu_65c02, &cpu_65c102, &cpu_65c112,
     &cpu_6301, &cpu_6303, &cpu_63l05, &cpu_6305,
     &cpu_6800, &cpu_6801, &cpu_6802, &cpu_6803, &cpu_6805, &cpu_68hc05, &cpu_68hc705, &cpu_6808, &cpu_6809,
-    &cpu_8080, &cpu_8085, &cpu_lr35902, &cpu_nsc800,
+    &cpu_8048, &cpu_8051, &cpu_8080, &cpu_8085, &cpu_lr35902, &cpu_nsc800,
     &cpu_z80,
     NULL
 };

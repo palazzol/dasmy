@@ -17,12 +17,13 @@ M6805_CPUS = ['6805', '68HC05', '63L05', '6305']
 M6809_CPUS = ['6809']
 I8080_CPUS = ['8080', '8085']
 Z80_CPUS = ['Z80', 'LR35902']
+MCS_CPUS = ['8048', '8051']
 # Opcode table used by each tested CPU type
 TABLES = {'6800': 'tab_6800', '6801': 'tab_6801', '6301': 'tab_6301',
           '6502': 'tab_6502', '65C00': 'tab_65c00', '65C02': 'tab_65c02',
           '6805': 'tab_6805', '68HC05': 'tab_68hc05', '63L05': 'tab_63l05', '6305': 'tab_6305',
           '6809': 'tab_6809', '8080': 'tab_8080', '8085': 'tab_8085', 'Z80': 'tab_z80',
-          'NSC800': 'tab_z80', 'LR35902': 'tab_lr35902'}
+          'NSC800': 'tab_z80', 'LR35902': 'tab_lr35902', '8048': 'tab_8048', '8051': 'tab_8051'}
 NUMFORMATS = 'ACDIMRS'
 
 
@@ -214,6 +215,22 @@ def intel_cases():
     return out
 
 
+def mcs_cases():
+    # Operands chosen to hit SFR/bit names (0x80+), plain RAM, and in-page targets
+    out = family_cases(MCS_CPUS, ((0x12, 0x34), (0x88, 0xE0), (0xD0, 0x05)))
+    # 8048 images are at most 4K; small images keep 11-bit jumps inside
+    out += code_thread_cases('8048', (0x000, 0x003, 0x007), size=0x800)
+    out += code_thread_cases('8048', (0x000, 0x003, 0x007), size=0x1000, tag='-4k', seeds=1)
+    out += code_thread_cases('8051', (0x0000, 0x0003, 0x000B, 0x0013, 0x001B, 0x0023), size=0x1000)
+    # 8051 with a symbol file naming internal RAM, so data labels exist
+    sym = (b'cpu 8051\ncode 0 reset\nsymbol 0x30 counter\nbyte 0x40 flags 4\n'
+           b'symbol 0x1234 table\nword 0x0100 ptrs 4\n')
+    files = {'ram.bin': program_image(600, 0x800, 'tab_8051'), 'ram.sym': sym}
+    out.append(case('8051-ram-symbols', files, ['-t', 'ram.bin']))
+    out.append(case('8051-ram-symbols-nothread', files, ['ram.bin']))
+    return out
+
+
 def m6800_cases():
     out = family_cases(M6800_CPUS)
     for cpu in M6800_CPUS:
@@ -291,4 +308,4 @@ def symfile_cases():
 
 
 def all_cases():
-    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + intel_cases() + option_cases() + symfile_cases()
+    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + intel_cases() + mcs_cases() + option_cases() + symfile_cases()
