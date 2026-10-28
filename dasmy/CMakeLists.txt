@@ -23,7 +23,9 @@ add_executable(dasmy
     src/cpu_6502.c
     src/cpu_6800.c
     src/cpu_6805.c
+    src/cpu_6809.c
     src/tables/m6502_tab.c
     src/tables/m6800_tab.c
     src/tables/m6805_tab.c
+    src/tables/m6809_tab.c
 )

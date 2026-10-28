@@ -17,7 +17,14 @@ TABLES = {
     'm6800': [('tab_6800', 0x421168, 256), ('tab_6801', 0x4225d8, 256), ('tab_6301', 0x4239f8, 256)],
     'm6805': [('tab_6805', 0x424e18, 256), ('tab_68hc05', 0x428a18, 256), ('tab_63l05', 0x426218, 256),
               ('tab_6305', 0x427618, 256)],
+    'm6809': [('tab_6809', 0x41d230, 256), ('tab_6809_p10', 0x41e630, 256), ('tab_6809_p11', 0x41fa30, 256)],
     'm6502': [('tab_6502', 0x429f68, 256), ('tab_65c00', 0x42b368, 256), ('tab_65c02', 0x42c768, 256)],
+}
+
+
+# name -> list of (array name, VA, count) for signed byte arrays
+BYTE_ARRAYS = {
+    'm6809': [('m6809_index_extra', 0x41d130, 256)],
 }
 
 
@@ -40,6 +47,12 @@ def emit(pe, out_dir, group, tables):
                 mn, ops, flags, length, cycles = (pe.u32(e + 4 * k) for k in range(5))
                 f.write(f'    /* {i:02X} */ {{ {c_str(pe.cstr(mn))}, {c_str(pe.cstr(ops))}, '
                         f'0x{flags:04X}, {length}, 0x{cycles:X} }},\n')
+            f.write('};\n')
+        for name, va, count in BYTE_ARRAYS.get(group, []):
+            data = pe.bytes(va, count)
+            f.write(f'\nconst signed char {name}[{count}] = {{\n')
+            for i in range(0, count, 16):
+                f.write('    ' + ' '.join(f'{(b ^ 0x80) - 0x80:2d},' for b in data[i:i + 16]) + f' /* {i:02X} */\n')
             f.write('};\n')
     print(f'wrote {path}')
 

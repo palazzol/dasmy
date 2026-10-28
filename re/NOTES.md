@@ -12,16 +12,17 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
   - 6800 family (6800, 6801, 6802, 6803, 6808, 6301, 6303): `cpu_6800.c`.
   - 6502 family (6502, 65C00, 65C29, 65C02, 65C102, 65C112): `cpu_6502.c`.
   - 6805 family (6805, 68HC05, 68HC705, 63L05, 6305): `cpu_6805.c`.
+  - 6809: `cpu_6809.c`. All the Motorola-style CPUs are now done.
 
   Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 259/260 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+- **Result: 300/301 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
 
 **Not done yet**
-- **Remaining CPU modules** (see the CPU table below): 6809, Z80/NSC800, LR35902, 8080/8085, 8048,
+- **Remaining CPU modules** (see the CPU table below): Z80/NSC800, LR35902, 8080/8085, 8048,
   8051, PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
   (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
   Workflow per family:
@@ -153,6 +154,25 @@ Opcode tables use 20-byte entries `{ mnemonic, operand_fmt, flags, cycles?, ? }`
   - 0x4B: `brset`/`brclr`. Table text `"n,"`, then the direct address, `","`, and the target (pc+3+rel).
   - 0x50 / 0x51: 8-bit / 16-bit `offset,x`. The offset goes through the symbol lookup, so it's an `L` label when OPF_CODEREF.
 - **Threading:** indexed jumps print "Ignoring index branch opcode %02X %02X [%02X] at address %04X".
+
+## 6809 module
+
+- **Tables:** page 0 0x41d230, page 0x10 0x41e630, page 0x11 0x41fa30. Indexed post-byte extra length 0x41d130 (int8, −1 = invalid post-byte).
+  Big endian, max length 5, 'M'.
+- **Decode:**
+  - Type 8/9 entries are the 0x10/0x11 prefixes. The next byte is looked up in the page table, and opaddr = pc+2.
+  - Type 3 (indexed): length += extra[post-byte]; an extra of −1 makes the instruction invalid.
+  - Type 0xA (`tfr`/`exg`): invalid unless both nibbles name a register (0x43dbd8: d x y u s pc - - a b cc dp).
+- **Relative branches:** rel8 target = opaddr+1+off, rel16 = opaddr+2+off. Pass 1 labels them only when OPF_CODEREF is set.
+- **Indexed operand (0x405db0):**
+  - 5-bit offset `"%d,r"`.
+  - Otherwise `,r+` `,r++` `,-r` `,--r` `,r` `b,r` `a,r` `%d,r` (8- and 16-bit) `d,r`, or `[addr]` (symbol lookup).
+  - Bit 4 wraps the operand in `[...]`.
+  - PC-relative (0x8C/0x8D) prints `"%d,pc"` followed by `"\t\t;(" target ")"`.
+  - Pass 1 labels only the extended indirect `[addr]` (as data).
+- **Register lists (`psh`/`pul`), joined by `", "`:** types 0xC and 0xD use the S names and list from bit 7 down. 0xE uses the U names from bit 7 down;
+  **0xF uses the U names from bit 0 up**. This asymmetry is in the original.
+- **Threading:** follows rel8, rel16, direct and extended. Indexed jumps print "Ignoring index branch opcode %02X at address %04X".
 
 ## Memory map (object at 0x43eba0) types
 

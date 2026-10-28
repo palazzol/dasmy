@@ -14,10 +14,12 @@ EXAMPLES = os.path.join(ROOT, 'original', 'examples')
 M6800_CPUS = ['6800', '6801', '6301']
 M6502_CPUS = ['6502', '65C00', '65C02']
 M6805_CPUS = ['6805', '68HC05', '63L05', '6305']
+M6809_CPUS = ['6809']
 # Opcode table used by each tested CPU type
 TABLES = {'6800': 'tab_6800', '6801': 'tab_6801', '6301': 'tab_6301',
           '6502': 'tab_6502', '65C00': 'tab_65c00', '65C02': 'tab_65c02',
-          '6805': 'tab_6805', '68HC05': 'tab_68hc05', '63L05': 'tab_63l05', '6305': 'tab_6305'}
+          '6805': 'tab_6805', '68HC05': 'tab_68hc05', '63L05': 'tab_63l05', '6305': 'tab_6305',
+          '6809': 'tab_6809'}
 NUMFORMATS = 'ACDIMRS'
 
 
@@ -30,11 +32,11 @@ def case(name, files, args):
     return {'name': name, 'files': files, 'args': args}
 
 
-def sweep_image(slot=4, operands=(0x12, 0x34), base_op=0):
-    """Every opcode at the start of its own slot; the last byte of each slot is skipped."""
+def sweep_image(slot=4, operands=(0x12, 0x34), base_op=0, prefix=()):
+    """Every opcode (after an optional prefix) at the start of its own slot; the last byte of each slot is skipped."""
     data = bytearray()
     for op in range(256):
-        b = [(op + base_op) & 0xFF] + list(operands)
+        b = list(prefix) + [(op + base_op) & 0xFF] + list(operands)
         data += bytes((b + [0] * slot)[:slot])
     return bytes(data)
 
@@ -146,6 +148,31 @@ def m6805_cases():
     return out
 
 
+def m6809_cases():
+    out = family_cases(M6809_CPUS, ((0x12, 0x34), (0xC0, 0x10), (0x9F, 0xC0, 0x10)))
+    # Prefix pages 0x10 and 0x11, and every post-byte for indexed and tfr/exg
+    sweeps = {
+        'page10': dict(prefix=(0x10,), operands=(0x12, 0x34, 0x56)),
+        'page10-idx': dict(prefix=(0x10,), operands=(0x9F, 0xC0, 0x10)),
+        'page11': dict(prefix=(0x11,), operands=(0x8C, 0xC0, 0x10)),
+        'index': dict(prefix=(0xA6,), operands=(0xC0, 0x10)),
+        'index-jmp': dict(prefix=(0x6E,), operands=(0xC0, 0x10)),
+        'tfr': dict(prefix=(0x1F,), operands=()),
+        'pshs': dict(prefix=(0x34,), operands=()),
+        'puls': dict(prefix=(0x35,), operands=()),
+        'pshu': dict(prefix=(0x36,), operands=()),
+        'pulu': dict(prefix=(0x37,), operands=()),
+    }
+    for name, kw in sweeps.items():
+        files = {'sweep.bin': sweep_image(slot=6, **kw), 'sweep.sym': sweep_sym('6809', 0xC000, slot=6)}
+        out.append(case(f'6809-sweep-{name}', files, ['sweep.bin']))
+        out.append(case(f'6809-sweep-{name}-wide', files, ['-w', 'sweep.bin']))
+    out += vector_thread_cases('6809', (0xFFF2, 0xFFF4, 0xFFF6, 0xFFF8, 0xFFFA, 0xFFFC, 0xFFFE), big_endian=True)
+    out += vector_thread_cases('6809', (0xFFF2, 0xFFF4, 0xFFF6, 0xFFF8, 0xFFFA, 0xFFFC, 0xFFFE), big_endian=True,
+                               tag='-prog', table='tab_6809')
+    return out
+
+
 def m6800_cases():
     out = family_cases(M6800_CPUS)
     for cpu in M6800_CPUS:
@@ -223,4 +250,4 @@ def symfile_cases():
 
 
 def all_cases():
-    return m6800_cases() + m6502_cases() + m6805_cases() + option_cases() + symfile_cases()
+    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + option_cases() + symfile_cases()
