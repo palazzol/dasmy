@@ -13,16 +13,18 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
   - 6502 family (6502, 65C00, 65C29, 65C02, 65C102, 65C112): `cpu_6502.c`.
   - 6805 family (6805, 68HC05, 68HC705, 63L05, 6305): `cpu_6805.c`.
   - 6809: `cpu_6809.c`. All the Motorola-style CPUs are now done.
+  - 8080, 8085: `cpu_8080.c`.
+  - Z80, NSC800, LR35902: `cpu_z80.c`.
 
   Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 300/301 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+- **Result: 372/373 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
 
 **Not done yet**
-- **Remaining CPU modules** (see the CPU table below): Z80/NSC800, LR35902, 8080/8085, 8048,
+- **Remaining CPU modules** (see the CPU table below): 8048,
   8051, PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
   (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
   Workflow per family:
@@ -173,6 +175,25 @@ Opcode tables use 20-byte entries `{ mnemonic, operand_fmt, flags, cycles?, ? }`
 - **Register lists (`psh`/`pul`), joined by `", "`:** types 0xC and 0xD use the S names and list from bit 7 down. 0xE uses the U names from bit 7 down;
   **0xF uses the U names from bit 0 up**. This asymmetry is in the original.
 - **Threading:** follows rel8, rel16, direct and extended. Indexed jumps print "Ignoring index branch opcode %02X at address %04X".
+
+## 8080/8085, Z80/NSC800 and LR35902 modules
+
+All three use the table's operand text either as is (copied first, always) or as a printf format for the operand.
+Little endian, 'I'. Relative targets are opaddr+1+off.
+
+- **8080** 0x417b18, **8085** 0x418f18 (adds `rim`/`sim`). Format types:
+  - 1: with OPF_CODEREF, INFO "index jump" (`pchl`).
+  - 4: address, appended (data or code).
+  - 6 / 0x10: byte into the format.
+  - 7 / 0x11: data symbol or word into the format.
+  - 0x17: `rst`; the target is `opcode & 0x38`, labelled and threaded.
+- **Z80** main 0x432138; prefix entries are types 0x12–0x15:
+  - CB 0x435d38, ED 0x439938, DD 0x433538, FD 0x434938.
+  - DD/FD CB entries are type 0x12, and then the opcode at pc+3 selects DDCB 0x437138 / FDCB 0x438538.
+  - opaddr = pc+2 for every prefixed instruction.
+  - Extra types: 2 rel, 3 `(ix+%s)` displacement (unsigned byte format), 0x16 `(ix+%s),%s` displacement + immediate.
+- **LR35902** main 0x414ed0, CB 0x4162d0. Extra types: 5 `$FF00+n` (data label), 0x90 `($FF00+c)` (prints fmt_word(0xFF00)).
+- **Thread:** 0x408ac0 is shared by Z80 and LR35902; it follows rel, address and rst.
 
 ## Memory map (object at 0x43eba0) types
 

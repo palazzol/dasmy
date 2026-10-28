@@ -15,11 +15,14 @@ M6800_CPUS = ['6800', '6801', '6301']
 M6502_CPUS = ['6502', '65C00', '65C02']
 M6805_CPUS = ['6805', '68HC05', '63L05', '6305']
 M6809_CPUS = ['6809']
+I8080_CPUS = ['8080', '8085']
+Z80_CPUS = ['Z80', 'LR35902']
 # Opcode table used by each tested CPU type
 TABLES = {'6800': 'tab_6800', '6801': 'tab_6801', '6301': 'tab_6301',
           '6502': 'tab_6502', '65C00': 'tab_65c00', '65C02': 'tab_65c02',
           '6805': 'tab_6805', '68HC05': 'tab_68hc05', '63L05': 'tab_63l05', '6305': 'tab_6305',
-          '6809': 'tab_6809'}
+          '6809': 'tab_6809', '8080': 'tab_8080', '8085': 'tab_8085', 'Z80': 'tab_z80',
+          'NSC800': 'tab_z80', 'LR35902': 'tab_lr35902'}
 NUMFORMATS = 'ACDIMRS'
 
 
@@ -173,6 +176,44 @@ def m6809_cases():
     return out
 
 
+def code_thread_cases(cpu, entries, size=0x2000, seeds=2, tag=''):
+    """Threading from `code` entry points in an image built from valid instructions."""
+    out = []
+    sym = [f'cpu {cpu}'] + [f'code {a:#x} entry{a:04X}' for a in entries]
+    sym = ('\n'.join(sym) + '\n').encode()
+    for seed in range(seeds):
+        files = {'prog.bin': program_image(400 + seed, size, TABLES[cpu]), 'prog.sym': sym}
+        out.append(case(f'{cpu}-thread{tag}{seed}', files, ['-t', 'prog.bin']))
+        out.append(case(f'{cpu}-thread{tag}-wide{seed}', files, ['-t', '-w', 'prog.bin']))
+        out.append(case(f'{cpu}-thread{tag}-asm{seed}', files, ['-t', '-a', 'prog.bin']))
+    return out
+
+
+def intel_cases():
+    out = family_cases(I8080_CPUS + Z80_CPUS, ((0x12, 0x34), (0x10, 0x01), (0x80, 0xFF)))
+    # Z80 prefix pages; DD CB and FD CB put the displacement before the opcode
+    for name, prefix in (('cb', (0xCB,)), ('ed', (0xED,)), ('dd', (0xDD,)), ('fd', (0xFD,)),
+                         ('ddcb', (0xDD, 0xCB, 0x05)), ('fdcb', (0xFD, 0xCB, 0xFB))):
+        files = {'sweep.bin': sweep_image(slot=6, prefix=prefix, operands=(0x12, 0x34)),
+                 'sweep.sym': sweep_sym('Z80', 0x1000, slot=6)}
+        out.append(case(f'Z80-sweep-{name}', files, ['sweep.bin']))
+        out.append(case(f'Z80-sweep-{name}-wide', files, ['-w', 'sweep.bin']))
+    files = {'sweep.bin': sweep_image(slot=6, prefix=(0xCB,), operands=(0x12, 0x34)),
+             'sweep.sym': sweep_sym('LR35902', 0x1000, slot=6)}
+    out.append(case('LR35902-sweep-cb', files, ['sweep.bin']))
+    out.append(case('NSC800-random', {'rand.bin': random_image(9, 2048)}, ['-cNSC800', 'rand.bin']))
+    entries = (0x0000, 0x0008, 0x0010, 0x0038, 0x0066)
+    for cpu in ('8080', '8085', 'Z80'):
+        out += code_thread_cases(cpu, entries)
+    # GameBoy: the bundled Tetris symbol file (includes gameboy.sym)
+    syms = {'tetris.sym': example('tetris.sym'), 'gameboy.sym': example('gameboy.sym')}
+    for seed in range(2):
+        img = program_image(500 + seed, 0x8000, 'tab_lr35902')
+        out.append(case(f'LR35902-tetris{seed}', dict(syms, **{'tetris.bin': img}), ['-t', 'tetris.bin']))
+        out.append(case(f'LR35902-tetris-nothread{seed}', dict(syms, **{'tetris.bin': img}), ['tetris.bin']))
+    return out
+
+
 def m6800_cases():
     out = family_cases(M6800_CPUS)
     for cpu in M6800_CPUS:
@@ -250,4 +291,4 @@ def symfile_cases():
 
 
 def all_cases():
-    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + option_cases() + symfile_cases()
+    return m6800_cases() + m6502_cases() + m6805_cases() + m6809_cases() + intel_cases() + option_cases() + symfile_cases()

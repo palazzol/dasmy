@@ -7,6 +7,8 @@
 #include "cpu_6800.h"
 #include "cpu_6805.h"
 #include "cpu_6809.h"
+#include "cpu_8080.h"
+#include "cpu_z80.h"
 
 const CpuDesc *cpu;
 
@@ -27,6 +29,20 @@ static const CpuDesc cpu_6305 = M6805_FAMILY("6305", "HD6305", "Hitachi", "6305"
 static const CpuDesc cpu_6805 = M6805_FAMILY("6805", "MC6805", "Motorola", "6805", 0xFFF, m6805_decode);
 static const CpuDesc cpu_68hc05 = M6805_FAMILY("68HC05", "MC68HC05", "Motorola", "68HC05", 0x1FFF, m68hc05_decode);
 static const CpuDesc cpu_68hc705 = M6805_FAMILY("68HC705", "MC68HC705", "Motorola", "68HC05", 0x1FFF, m68hc05_decode);
+
+#define INTEL_STYLE(name, part, mfr, fam, max_len, decode, pass1, format, thread) \
+    { name, part, mfr, fam, 0, 1, max_len, 0, 0xFFFF, 8, 0, 0, 0, 'I', decode, pass1, format, thread }
+
+static const CpuDesc cpu_8080 = INTEL_STYLE("8080", "I8080", "Intel", "MCS-80/85", 3,
+                                            i8080_decode, i8080_pass1, i8080_format, i8080_thread);
+static const CpuDesc cpu_8085 = INTEL_STYLE("8085", "I8085", "Intel", "MCS-80/85", 3,
+                                            i8085_decode, i8080_pass1, i8080_format, i8080_thread);
+static const CpuDesc cpu_lr35902 = INTEL_STYLE("LR35902", "LR35902", "Sharp", "GameBoy", 3,
+                                               lr35902_decode, lr35902_pass1, lr35902_format, z80_thread);
+static const CpuDesc cpu_nsc800 = INTEL_STYLE("NSC800", "NSC800", "National Semiconductor", "Z80", 4,
+                                              z80_decode, z80_pass1, z80_format, z80_thread);
+static const CpuDesc cpu_z80 = INTEL_STYLE("Z80", "Z80", "Zilog", "Z80", 4,
+                                           z80_decode, z80_pass1, z80_format, z80_thread);
 
 static const CpuDesc cpu_6809 = { "6809", "M6809", "Motorola", "6809", 1, 1, 5, 0, 0xFFFF, 8, 0, 0, 0, 'M',
                                   m6809_decode, m6809_pass1, m6809_format, m6809_thread };
@@ -51,6 +67,8 @@ const CpuDesc *const cpu_list[] = {
     &cpu_6502, &cpu_65c00, &cpu_65c29, &cpu_65c02, &cpu_65c102, &cpu_65c112,
     &cpu_6301, &cpu_6303, &cpu_63l05, &cpu_6305,
     &cpu_6800, &cpu_6801, &cpu_6802, &cpu_6803, &cpu_6805, &cpu_68hc05, &cpu_68hc705, &cpu_6808, &cpu_6809,
+    &cpu_8080, &cpu_8085, &cpu_lr35902, &cpu_nsc800,
+    &cpu_z80,
     NULL
 };
 
