@@ -35,7 +35,7 @@ static void format_msg(char *buf, size_t size, const char *fmt, va_list ap)
 }
 
 /* [0x401000] */
-void fatal(const char *fmt, ...)
+NORETURN void fatal(const char *fmt, ...)
 {
     char buf[256];
     va_list ap;

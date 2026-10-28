@@ -3,9 +3,10 @@
 Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1.40
 (`original/Dasmx.exe`, Win32 console, MSVC, built Oct 18 2003).
 
-## Status (2026-10-28): all CPUs ported
+## Status (2026-10-28): all CPUs ported, Linux and Windows builds tested
 
 **Done**
+- **User documentation:** `README.md` at the repository root.
 - **Core ported** to C99 in `dasmy/src/`: command line, file handling, symbol file (both passes), symbol table (same hash and probe order),
   memory map, threading, passes 1 and 2, listing/asm/wide output, header, symbol table listing, statistics.
 - **CPUs ported:**
@@ -23,19 +24,24 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
 
   Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
+- **Windows build:** cross-compiled with MinGW-w64 (`mingw-w64-gcc`, GCC 16.2):
+  `cmake -S dasmy -B dasmy/build-win -DCMAKE_TOOLCHAIN_FILE="$PWD/dasmy/cmake/mingw-w64.cmake"`. The toolchain path must be absolute.
+  The result is a static `dasmy.exe` that needs only the Universal C Runtime (Windows 10+). Like the original, it writes CRLF.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 479/479 cases pass.**
+- **Result: 479/479 cases pass** for both the Linux build and the Windows build. For the Windows build,
+  `python3 tests/compare.py --dasmy dasmy/build-win/dasmy.exe` runs it under Wine and also requires identical line endings.
+  It takes about 40 minutes, because each case starts Wine to run dasmy.exe (the original's results stay cached).
 - **Second address space:** the 8051's separate data space (`addr2_bits`) is covered by tests. In the original, its only effect is that
   data labels aren't printed in the code listing; data symbols still name operands and appear in the symbol table.
 
 **Not done yet**
+- **Native Windows build:** building with Visual Studio or MinGW on Windows itself is untested (the cross-build is tested).
 - **Adding coverage:** to test a CPU further, add cases in `tests/cases.py`: `family_cases()`, `vector_thread_cases()`,
   `code_thread_cases()`, `program_image()`. To port a variant, read its decode/pass1/format/thread in `core.asm`
   and map its switches with `re/scripts/switch.py`.
 - **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
-- **README:** Dasmy has no README or usage documentation of its own yet.
 
 **Deliberate differences from DASMx**
 - **Banner and header:** these name Dasmy instead of DASMx (`DASMY_*` in `dasmy.h`).

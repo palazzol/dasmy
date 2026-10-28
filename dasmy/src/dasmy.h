@@ -82,7 +82,15 @@ extern long src_len;
 
 /* ---- Diagnostics [0x401000, 0x401060] ---- */
 
-void fatal(const char *fmt, ...);
+#if defined(__GNUC__) || defined(__clang__)
+#define NORETURN __attribute__((noreturn))
+#elif defined(_MSC_VER)
+#define NORETURN __declspec(noreturn)
+#else
+#define NORETURN
+#endif
+
+NORETURN void fatal(const char *fmt, ...);
 void warning(const char *fmt, ...);
 
 /* ---- Number formatting [0x404200..0x404410] ---- */

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Run DASMx (under Wine) and Dasmy on the same inputs and compare the results.
 
-Usage: python3 tests/compare.py [-k PATTERN] [-v] [--keep]
+Usage: python3 tests/compare.py [-k PATTERN] [-v] [--keep] [--dasmy PATH]
 
 Each test case runs both programs in a fresh scratch directory and compares
 the exit code, stdout, stderr and the generated .lst/.asm file.  The banner
 and header lines that name the program, and the date line, are masked.
+
+--dasmy selects the Dasmy binary to test (default dasmy/build/dasmy).  A
+Windows build (a path ending in .exe) also runs under Wine, and then line
+endings must match exactly too, since both programs should write CRLF.
 """
 
 import argparse
@@ -39,8 +43,9 @@ MASKS = [
 WINE_NOISE = re.compile(r'MESA|pci id for fd')
 
 
-def normalise(text):
-    text = text.replace('\r\n', '\n')
+def normalise(text, keep_cr=False):
+    if not keep_cr:
+        text = text.replace('\r\n', '\n')
     out = []
     for line in text.split('\n'):
         for pat, rep in MASKS:
@@ -49,9 +54,16 @@ def normalise(text):
     return '\n'.join(out)
 
 
+def is_windows_build():
+    return DASMY.lower().endswith('.exe')
+
+
 def run(prog, args, cwd):
     if prog == 'dasmx':
         cmd = ['wine', os.path.join(cwd, 'Dasmx.exe')] + args
+        env = dict(os.environ, WINEDEBUG='-all')
+    elif is_windows_build():
+        cmd = ['wine', DASMY] + args
         env = dict(os.environ, WINEDEBUG='-all')
     else:
         cmd = [DASMY] + args
@@ -104,15 +116,18 @@ def run_case(case, keep=False):
     problems = []
     x, y = results['dasmx'], results['dasmy']
     x = (x[0], x[1], strip_wine_noise(x[2]), x[3])
+    if is_windows_build():
+        y = (y[0], y[1], strip_wine_noise(y[2]), y[3])
+    strict = is_windows_build()
     if x[0] != y[0]:
         problems.append(('exit code', f'dasmx={x[0]} dasmy={y[0]}'))
-    for what, a, b in (('stdout', x[1], y[1]), ('stderr', x[2], y[2])):
-        if normalise(a).strip() != normalise(b).strip():
+    for what, a, b, keep_cr in (('stdout', x[1], y[1], strict), ('stderr', x[2], y[2], False)):
+        if normalise(a, keep_cr).strip() != normalise(b, keep_cr).strip():
             problems.append((what, diff(a, b)))
     if set(x[3]) != set(y[3]):
         problems.append(('output files', f'dasmx={sorted(x[3])} dasmy={sorted(y[3])}'))
     for name in x[3]:
-        if name in y[3] and normalise(x[3][name]) != normalise(y[3][name]):
+        if name in y[3] and normalise(x[3][name], strict) != normalise(y[3][name], strict):
             problems.append((name, diff(x[3][name], y[3][name])))
 
     if not keep:
@@ -124,6 +139,8 @@ def run_case(case, keep=False):
 
 
 def diff(a, b, limit=40):
+    if normalise(a) == normalise(b):
+        return '(only the line endings differ)'
     lines = list(difflib.unified_diff(normalise(a).split('\n'), normalise(b).split('\n'),
                                       'dasmx', 'dasmy', lineterm='', n=2))
     if len(lines) > limit:
@@ -136,7 +153,12 @@ def main():
     ap.add_argument('-k', help='only run cases whose name contains this')
     ap.add_argument('-v', action='store_true', help='show diffs')
     ap.add_argument('--keep', action='store_true', help='keep scratch dirs of failing cases')
+    ap.add_argument('--dasmy', help='Dasmy binary to test; a .exe runs under Wine')
     opts = ap.parse_args()
+
+    global DASMY
+    if opts.dasmy:
+        DASMY = os.path.abspath(opts.dasmy)
 
     if not os.path.exists(DASMY):
         sys.exit(f'build Dasmy first: {DASMY} not found')
