@@ -1,5 +1,5 @@
 /*
- * Dasmy - a cross-platform reimplementation of the DASMx 1.40 disassembler.
+ * DASMy - a cross-platform reimplementation of the DASMx 1.40 disassembler.
  *
  * Comments of the form [0x4xxxxx] give the address of the corresponding
  * function in the original Dasmx.exe (see re/NOTES.md).
@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define DASMY_NAME      "Dasmy object code disassembler"
+#define DASMY_NAME      "DASMy object code disassembler"
 #define DASMY_CREDIT    "Reimplementation of DASMx 1.40"
 #define DASMY_VER_MAJOR 0
 #define DASMY_VER_MINOR 10

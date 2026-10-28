@@ -1,4 +1,4 @@
-# Cross-compile Dasmy for 64-bit Windows with MinGW-w64.
+# Cross-compile DASMy for 64-bit Windows with MinGW-w64.
 #
 #   cmake -S dasmy -B dasmy/build-win -DCMAKE_TOOLCHAIN_FILE="$PWD/dasmy/cmake/mingw-w64.cmake"
 #   cmake --build dasmy/build-win

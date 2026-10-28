@@ -1,4 +1,4 @@
-"""Extract DASMx opcode tables from Dasmx.exe into C source for Dasmy.
+"""Extract DASMx opcode tables from Dasmx.exe into C source for DASMy.
 
 Usage: python3 -I re/scripts/gentables.py original/Dasmx.exe dasmy/src/tables
 

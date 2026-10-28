@@ -1,6 +1,6 @@
 # DASMx 1.40 reverse-engineering notes
 
-Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1.40
+Working notes for building DASMy, a cross-platform C reimplementation of DASMx 1.40
 (`original/Dasmx.exe`, Win32 console, MSVC, built Oct 18 2003).
 
 ## Status (2026-10-28): all CPUs ported, Linux and Windows builds tested
@@ -27,7 +27,7 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
 - **Windows build:** cross-compiled with MinGW-w64 (`mingw-w64-gcc`, GCC 16.2):
   `cmake -S dasmy -B dasmy/build-win -DCMAKE_TOOLCHAIN_FILE="$PWD/dasmy/cmake/mingw-w64.cmake"`. The toolchain path must be absolute.
   The result is a static `dasmy.exe` that needs only the Universal C Runtime (Windows 10+). Like the original, it writes CRLF.
-- **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
+- **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and DASMy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
 - **Result: 479/479 cases pass** for both the Linux build and the Windows build. For the Windows build,
@@ -44,13 +44,13 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
 - **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
 
 **Deliberate differences from DASMx**
-- **Banner and header:** these name Dasmy instead of DASMx (`DASMY_*` in `dasmy.h`).
-- **Out-of-image reads:** where the original read outside the image buffer (undefined behaviour), Dasmy reads 0.
+- **Banner and header:** these name DASMy instead of DASMx (`DASMY_*` in `dasmy.h`).
+- **Out-of-image reads:** where the original read outside the image buffer (undefined behaviour), DASMy reads 0.
   This shows up when an image is placed beyond the CPU's address space: operand addresses wrap, then point below the image
   (e.g. a 2650 image at 0xF800). The tests keep images inside each CPU's address space.
-- **Output file name:** an input file that exists without an extension crashes the original. Dasmy appends `.lst`/`.asm`.
+- **Output file name:** an input file that exists without an extension crashes the original. DASMy appends `.lst`/`.asm`.
 - **Path separators:** both `/` and `\` count as path separators when finding the extension.
-- **Statistics:** a statistics run with no unskipped bytes divides by zero in the original. Dasmy prints 0%.
+- **Statistics:** a statistics run with no unskipped bytes divides by zero in the original. DASMy prints 0%.
 
 ## Tooling
 

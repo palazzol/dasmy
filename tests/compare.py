@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run DASMx (under Wine) and Dasmy on the same inputs and compare the results.
+"""Run DASMx (under Wine) and DASMy on the same inputs and compare the results.
 
 Usage: python3 tests/compare.py [-k PATTERN] [-v] [--keep] [--dasmy PATH]
 
@@ -7,7 +7,7 @@ Each test case runs both programs in a fresh scratch directory and compares
 the exit code, stdout, stderr and the generated .lst/.asm file.  The banner
 and header lines that name the program, and the date line, are masked.
 
---dasmy selects the Dasmy binary to test (default dasmy/build/dasmy).  A
+--dasmy selects the DASMy binary to test (default dasmy/build/dasmy).  A
 Windows build (a path ending in .exe) also runs under Wine, and then line
 endings must match exactly too, since both programs should write CRLF.
 """
@@ -34,7 +34,7 @@ import cases  # noqa: E402
 
 # Lines that legitimately differ between the two programs
 MASKS = [
-    (re.compile(r'DASMx object code disassembler|Dasmy object code disassembler'), 'TITLE'),
+    (re.compile(r'DASMx object code disassembler|DASMy object code disassembler'), 'TITLE'),
     (re.compile(r'\(c\) Copyright 1996-2003   Conquest Consultants|Reimplementation of DASMx 1\.40'), 'CREDIT'),
     (re.compile(r'Version \d+\.\d\d \([A-Z][a-z]{2} \d\d \d{4}\)'), 'VERSION'),
     (re.compile(r'(;\tDate:\t\t).*'), r'\1DATE'),
@@ -153,7 +153,7 @@ def main():
     ap.add_argument('-k', help='only run cases whose name contains this')
     ap.add_argument('-v', action='store_true', help='show diffs')
     ap.add_argument('--keep', action='store_true', help='keep scratch dirs of failing cases')
-    ap.add_argument('--dasmy', help='Dasmy binary to test; a .exe runs under Wine')
+    ap.add_argument('--dasmy', help='DASMy binary to test; a .exe runs under Wine')
     opts = ap.parse_args()
 
     global DASMY
@@ -161,7 +161,7 @@ def main():
         DASMY = os.path.abspath(opts.dasmy)
 
     if not os.path.exists(DASMY):
-        sys.exit(f'build Dasmy first: {DASMY} not found')
+        sys.exit(f'build DASMy first: {DASMY} not found')
     all_cases = [c for c in cases.all_cases() if not opts.k or opts.k in c['name']]
     failed = 0
     for case in all_cases:

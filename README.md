@@ -1,11 +1,11 @@
-# Dasmy
+# DASMy
 
-Dasmy is a cross-platform reimplementation of **DASMx 1.40**, the multi-CPU
+DASMy is a cross-platform reimplementation of **DASMx 1.40**, the multi-CPU
 disassembler by Conquest Consultants (2003). It takes a binary ROM image and
 produces a listing (`.lst`) or assembler source (`.asm`) for one of 31 classic
 8-bit microprocessors and microcontrollers.
 
-Dasmy is written in portable C99. Its output matches DASMx's byte for byte,
+DASMy is written in portable C99. Its output matches DASMx's byte for byte,
 except for the lines that name the program and the date. An automated test
 suite checks this against the original program.
 
@@ -75,7 +75,7 @@ dasmy [-altvw] [-cTYPE] [-eNNNN] [-oNNNN] binfile[.ext]
 
 Numbers use C notation: `4096`, `0x1000` or `010000`.
 
-If the image file can't be opened and its name has no extension, Dasmy tries
+If the image file can't be opened and its name has no extension, DASMy tries
 again with `.bin` added. The output file gets the image's name with `.lst` or
 `.asm` in place of its extension.
 
@@ -100,7 +100,7 @@ This writes `game.lst`. Threading needs at least one entry point, from `-e`,
 
 ### Symbol file
 
-If a file with the image's base name and the extension `.sym` exists, Dasmy
+If a file with the image's base name and the extension `.sym` exists, DASMy
 reads it. It's a text file with one command per line; `;` starts a comment.
 
 | Command | Meaning |
@@ -121,7 +121,7 @@ reads it. It's a text file with one command per line; `;` starts a comment.
 
 The DASMx manual (`DASMx.htm`, in the original distribution) describes
 these in detail, along with code threading and the processor specifics.
-Dasmy follows DASMx's actual behaviour, which differs from the manual in a few places:
+DASMy follows DASMx's actual behaviour, which differs from the manual in a few places:
 
 - **CPU type:** there is no default. A CPU must be given with `-c` or `cpu`.
 - **`code` count:** a COUNT on `code` adds an entry point at each of the next COUNT *bytes*, not instructions.
@@ -130,10 +130,10 @@ Dasmy follows DASMx's actual behaviour, which differs from the manual in a few p
 
 ## Differences from DASMx
 
-- **Program name:** the banner and the listing header name Dasmy.
+- **Program name:** the banner and the listing header name DASMy.
 - **Out-of-range reads:** where DASMx read memory outside the image (e.g. an image placed beyond the CPU's
-  address space, whose operands then point below it), it printed whatever was there. Dasmy reads 0.
-- **Files without an extension:** DASMx crashes on an input file that exists without an extension. Dasmy adds
+  address space, whose operands then point below it), it printed whatever was there. DASMy reads 0.
+- **Files without an extension:** DASMx crashes on an input file that exists without an extension. DASMy adds
   `.lst`/`.asm` to the name.
 - **Paths:** `/` counts as a directory separator as well as `\`.
 - **Statistics:** threading statistics for an image whose bytes are all skipped are reported as 0% instead of
@@ -146,7 +146,7 @@ bugs. For example, 6805 branch targets wrap at 11 bits, and the 6809 lists
 ## Testing
 
 `tests/compare.py` runs DASMx under [Wine](https://www.winehq.org/) and
-Dasmy on the same inputs, then compares the exit codes, console output and
+DASMy on the same inputs, then compares the exit codes, console output and
 generated files. The test images are synthetic: opcode sweeps, random data,
 and programs built from valid instructions. They cover every opcode of every
 CPU, all the options and symbol file commands, and the error messages.
@@ -174,10 +174,10 @@ minutes; later runs take seconds.
 
 ## Origin and copyright
 
-Dasmy was produced by decompiling DASMx 1.40 with Ghidra and porting its logic
+DASMy was produced by decompiling DASMx 1.40 with Ghidra and porting its logic
 to C. The opcode tables are extracted directly from the DASMx executable.
 DASMx is copyright Conquest Consultants. Its distribution terms allow it to be
 copied freely, but say nothing about derived works. Bear that in mind before
-publishing or distributing Dasmy.
+publishing or distributing DASMy.
 
 The original DASMx distribution is not included in this repository.
