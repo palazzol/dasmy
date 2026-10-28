@@ -15,6 +15,7 @@ from pe import PE
 # name -> (VA, number of entries)
 TABLES = {
     'm6800': [('tab_6800', 0x421168, 256), ('tab_6801', 0x4225d8, 256), ('tab_6301', 0x4239f8, 256)],
+    'm6502': [('tab_6502', 0x429f68, 256), ('tab_65c00', 0x42b368, 256), ('tab_65c02', 0x42c768, 256)],
 }
 
 

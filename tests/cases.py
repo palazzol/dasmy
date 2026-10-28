@@ -11,6 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(ROOT, 'original', 'examples')
 
 M6800_CPUS = ['6800', '6801', '6301']
+M6502_CPUS = ['6502', '65C00', '65C02']
 NUMFORMATS = 'ACDIMRS'
 
 
@@ -46,23 +47,56 @@ def random_image(seed, size):
     return bytes(rng.randrange(256) for _ in range(size))
 
 
-def m6800_cases():
+def family_cases(cpus, operand_sets=((0x12, 0x34), (0xC0, 0x10))):
+    """Opcode sweeps and random images for each CPU of a family."""
     out = []
-    for cpu in M6800_CPUS:
+    for cpu in cpus:
         # Opcode sweeps: listing, wide listing and assembler output
-        files = {'sweep.bin': sweep_image(), 'sweep.sym': sweep_sym(cpu, 0xC000)}
+        files = {'sweep.bin': sweep_image(operands=operand_sets[0]), 'sweep.sym': sweep_sym(cpu, 0xC000)}
         out.append(case(f'{cpu}-sweep', files, ['sweep.bin']))
         out.append(case(f'{cpu}-sweep-wide', files, ['-w', 'sweep.bin']))
         out.append(case(f'{cpu}-sweep-asm', files, ['-a', 'sweep.bin']))
-        # Operands that point into the image, so labels get generated
-        files = {'sweep.bin': sweep_image(operands=(0xC0, 0x10)), 'sweep.sym': sweep_sym(cpu, 0xC000)}
-        out.append(case(f'{cpu}-sweep-labels', files, ['sweep.bin']))
+        # Other operand values, e.g. pointing into the image so labels get generated
+        for i, ops in enumerate(operand_sets[1:]):
+            files = {'sweep.bin': sweep_image(operands=ops), 'sweep.sym': sweep_sym(cpu, 0xC000)}
+            out.append(case(f'{cpu}-sweep-labels{i or ""}', files, ['sweep.bin']))
         # Random images, no threading
         for seed in range(3):
             files = {'rand.bin': random_image(seed, 2048)}
             out.append(case(f'{cpu}-random{seed}', files, [f'-c{cpu}', '-o0xF800', 'rand.bin']))
         out.append(case(f'{cpu}-random-wide', {'rand.bin': random_image(7, 2048)},
                         [f'-c{cpu}', '-w', '-o0xF800', 'rand.bin']))
+    return out
+
+
+def vector_thread_cases(cpu, vectors, big_endian, size=0x2000, seeds=3):
+    """Threading from the reset/interrupt vectors at the top of a random image."""
+    out = []
+    origin = 0x10000 - size
+    sym = [f'cpu {cpu}'] + [f'vector {v:#x} vec{v:04X} ent{v:04X}' for v in vectors]
+    sym = ('\n'.join(sym) + '\n').encode()
+    for seed in range(seeds):
+        img = bytearray(random_image(200 + seed, size))
+        rng = random.Random(seed)
+        for v in vectors:
+            target = origin + rng.randrange(size - 0x100)
+            hi, lo = target >> 8, target & 0xFF
+            img[v - origin], img[v - origin + 1] = (hi, lo) if big_endian else (lo, hi)
+        files = {'vec.bin': bytes(img), 'vec.sym': sym}
+        out.append(case(f'{cpu}-thread{seed}', files, ['-t', f'-o{origin:#x}', 'vec.bin']))
+        out.append(case(f'{cpu}-thread-wide{seed}', files, ['-t', '-w', f'-o{origin:#x}', 'vec.bin']))
+    return out
+
+
+def m6502_cases():
+    out = family_cases(M6502_CPUS, ((0x12, 0x34), (0xC0, 0x10), (0xFF, 0xC1)))
+    for cpu in M6502_CPUS:
+        out += vector_thread_cases(cpu, (0xFFFA, 0xFFFC, 0xFFFE), big_endian=False)
+    return out
+
+
+def m6800_cases():
+    out = family_cases(M6800_CPUS)
 
     # Number formats
     for nf in NUMFORMATS:
@@ -135,4 +169,4 @@ def symfile_cases():
 
 
 def all_cases():
-    return m6800_cases() + option_cases() + symfile_cases()
+    return m6800_cases() + m6502_cases() + option_cases() + symfile_cases()

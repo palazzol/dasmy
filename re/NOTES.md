@@ -3,23 +3,31 @@
 Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1.40
 (`original/Dasmx.exe`, Win32 console, MSVC, built Oct 18 2003).
 
-## Status (2026-10-27)
+## Status (2026-10-28)
 
 **Done**
 - **Core ported** to C99 in `dasmy/src/`: command line, file handling, symbol file (both passes), symbol table (same hash and probe order),
   memory map, threading, passes 1 and 2, listing/asm/wide output, header, symbol table listing, statistics.
-- **CPUs ported:** the 6800 family only (6800, 6801, 6802, 6803, 6808, 6301, 6303). Opcode tables are generated from the binary by
-  `re/scripts/gentables.py` into `dasmy/src/tables/m6800_tab.c`.
+- **CPUs ported:**
+  - 6800 family (6800, 6801, 6802, 6803, 6808, 6301, 6303): `cpu_6800.c`.
+  - 6502 family (6502, 65C00, 65C29, 65C02, 65C102, 65C112): `cpu_6502.c`.
+
+  Opcode tables are generated from the binary by `re/scripts/gentables.py` into `dasmy/src/tables/`.
 - **Build:** `cmake -S dasmy -B dasmy/build && cmake --build dasmy/build`. It compiles cleanly with `-Wall -Wextra`.
 - **Test harness:** `python3 tests/compare.py [-k NAME] [-v] [--keep]` runs Dasmx.exe under Wine and Dasmy on the same synthetic
   inputs (`tests/cases.py`). It compares exit code, stdout, stderr and the .lst/.asm, masking only the banner and the date.
   The original's results are cached in `tests/.cache/`; a full run takes seconds once cached, about 5 minutes cold.
-- **Result: 70/71 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
+- **Result: 115/116 cases pass.** The only failure is `opt-list`, because the other CPUs aren't in Dasmy yet.
 
 **Not done yet**
-- **Remaining CPU modules** (see the CPU table below): 6805 family, 6809, 6502 family, Z80/NSC800, LR35902, 8080/8085, 8048,
+- **Remaining CPU modules** (see the CPU table below): 6805 family, 6809, Z80/NSC800, LR35902, 8080/8085, 8048,
   8051, PIC16F8x, 2650, 1802/1805. Each needs its tables added to `gentables.py`, its decode/pass1/format/thread functions ported
   (mostly from `core.asm`, since Ghidra didn't create functions for pointer-only entry points), and sweep tests.
+  Workflow per family:
+  1. Find the table addresses in the decode functions.
+  2. Map each case with `re/scripts/switch.py`.
+  3. Read each case's stack offsets in `core.asm`.
+  4. Add tests with `family_cases()` / `vector_thread_cases()` in `tests/cases.py`.
 - **Second address space:** the 8051's separate data space (`addr2_bits`) is only partly handled; data labels are suppressed in the listing.
 - **Unit size:** 16-bit units (PIC) are untested end to end.
 - **SIGINT handler:** check its exact behaviour against 0x401170. Currently it prints "Abnormal termination" and exits 1.
@@ -43,6 +51,8 @@ Working notes for building Dasmy, a cross-platform C reimplementation of DASMx 1
   Use it where Ghidra lost arguments. Many internal functions pass arguments in registers (`in_EAX`, `unaff_EDI`, `unaff_ESI`),
   and the varargs to `out_tab_printf` (0x402330) were dropped.
 - `re/scripts/pe.py`: reads `Dasmx.exe` data by virtual address (`u32`, `cstr`, `bytes`).
+- `re/scripts/switch.py`: decodes an MSVC switch (byte index table + jump table) into case value → target address.
+- `re/out/` is not in git. Regenerate it with the two commands above if it's missing.
 - **Reference runs:** `WINEDEBUG=-all wine Dasmx.exe ...` works. Strip `\r`. Ignore the MESA-EGL noise on stderr.
 - **Address ranges:** DASMx's own code is 0x401000–~0x408f80. The C runtime follows from 0x4091a2.
 
@@ -111,6 +121,23 @@ Opcode tables use 20-byte entries `{ mnemonic, operand_fmt, flags, cycles?, ? }`
 - **`flags & 0x200`:** indexed / indirect jump.
 - **`flags & 0x1000`:** shows a `+` after the cycle count.
 - **Cycles:** low byte = minimum; the next byte is the extra amount added for the maximum (`[min/max]`).
+
+## 6502 family module
+
+- **Tables:** 6502 0x429f68, 65C00/65C29 0x42b368, 65C02/65C102/65C112 0x42c768. Little endian, default number format 'M'.
+- **Addressing types:**
+  - 1: implied; operand text comes from the table, e.g. `a`.
+  - 2: relative. 4: absolute. 5: zp. 6: imm8.
+  - 0x18 `(zp,x)`, 0x19 `(zp),y`, 0x1A `zp,x`, 0x1B `zp,y`, 0x1C `abs,x`, 0x1D `abs,y`.
+  - 0x1E: `jmp (abs)`.
+  - 0x20: `(zp)` (65C02).
+  - 0x21: `jmp (abs,x)` (65C02, INFO "index jump").
+  - 0x4B: `bbr`/`bbs zp,rel` (target = pc+3+rel).
+- **`jmp (abs)`:** INFO "indirect jump". If the pointer's low byte is 0xFF, the format function prints
+  "Indirect jump across page boundary at %04X" to stdout *during pass 2*, and the INFO becomes "indirect jump across page boundary".
+  - Pass 1 labels the pointer (X) and, if both pointer bytes are in the image, its target (L).
+  - Threading follows the target, or prints "Ignoring indirect jump outside ROM via %04X at address %04X".
+- **`(zp)`:** pass 1 labels the zp pointer and, if in the image, the word it points to (as data).
 
 ## Memory map (object at 0x43eba0) types
 
