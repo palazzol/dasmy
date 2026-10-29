@@ -180,5 +180,7 @@ DASMx is copyright Conquest Consultants. Its distribution terms allow it to be
 copied freely, but say nothing about derived works. Bear that in mind before
 publishing or distributing DASMy.
 
-The original DASMx distribution is not included in this repository.  It can still be found here:
+The original DASMx distribution is not included in this repository.  
+
+It can still be found here:  
 https://www.geocities.ws/pclareuk/DASMx/index.html
